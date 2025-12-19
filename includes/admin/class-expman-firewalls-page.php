@@ -6,6 +6,7 @@ class Expman_Firewalls_Page {
     const TABLE_FIREWALLS = 'exp_firewalls';
     const TABLE_TYPES     = 'exp_firewall_box_types';
     const TABLE_FORTICLOUD_ASSETS = 'exp_forticloud_assets';
+    const TABLE_FIREWALL_LOGS = 'exp_firewall_logs';
 
     private function column_exists( $table, $column ) {
         global $wpdb;
@@ -64,6 +65,7 @@ class Expman_Firewalls_Page {
         $fw_table    = $wpdb->prefix . self::TABLE_FIREWALLS;
         $types_table = $wpdb->prefix . self::TABLE_TYPES;
         $assets_table = $wpdb->prefix . self::TABLE_FORTICLOUD_ASSETS;
+        $logs_table = $wpdb->prefix . self::TABLE_FIREWALL_LOGS;
 
         $sql_fw = "CREATE TABLE {$fw_table} (
             id BIGINT(20) UNSIGNED NOT NULL AUTO_INCREMENT,
@@ -126,12 +128,28 @@ class Expman_Firewalls_Page {
             mapped_at DATETIME NULL,
             updated_at DATETIME NULL,
             created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (id),
             UNIQUE KEY serial_number (serial_number),
             KEY customer_id (customer_id)
         ) {$charset_collate};";
 
+        $sql_logs = "CREATE TABLE {$logs_table} (
+            id BIGINT(20) UNSIGNED NOT NULL AUTO_INCREMENT,
+            firewall_id BIGINT(20) NULL,
+            action VARCHAR(50) NOT NULL,
+            level VARCHAR(20) NOT NULL DEFAULT 'info',
+            message TEXT NULL,
+            context LONGTEXT NULL,
+            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (id),
+            KEY firewall_id (firewall_id),
+            KEY action (action),
+            KEY level (level)
+        ) {$charset_collate};";
+
         dbDelta( $sql_assets );
 dbDelta( $sql_types );
+        dbDelta( $sql_logs );
     }
 
     public static function render_public_page( $option_key, $version = '' ) {
@@ -159,6 +177,12 @@ dbDelta( $sql_types );
         $assets_table = $wpdb->prefix . self::TABLE_FORTICLOUD_ASSETS;
         $assets_exists = $wpdb->get_var( $wpdb->prepare( "SHOW TABLES LIKE %s", $assets_table ) );
         if ( $assets_exists !== $assets_table ) {
+            self::install_tables();
+        }
+
+        $logs_table = $wpdb->prefix . self::TABLE_FIREWALL_LOGS;
+        $logs_exists = $wpdb->get_var( $wpdb->prepare( "SHOW TABLES LIKE %s", $logs_table ) );
+        if ( $logs_exists !== $logs_table ) {
             self::install_tables();
         }
 
@@ -250,6 +274,29 @@ dbDelta( $sql_types );
         );
 
         return apply_filters( 'expman_forticloud_endpoints', $defaults );
+    }
+
+    private function log_firewall_event( $firewall_id, $action, $message = '', $context = array(), $level = 'info' ) {
+        global $wpdb;
+        $logs_table = $wpdb->prefix . self::TABLE_FIREWALL_LOGS;
+        $wpdb->insert(
+            $logs_table,
+            array(
+                'firewall_id' => $firewall_id ? intval( $firewall_id ) : null,
+                'action'      => sanitize_text_field( $action ),
+                'level'       => sanitize_text_field( $level ),
+                'message'     => sanitize_text_field( $message ),
+                'context'     => ! empty( $context ) ? wp_json_encode( $context ) : null,
+                'created_at'  => current_time( 'mysql' ),
+            ),
+            array( '%d', '%s', '%s', '%s', '%s', '%s' )
+        );
+    }
+
+    private function get_active_tab() {
+        $allowed = array( 'main', 'bulk', 'settings', 'trash', 'logs' );
+        $tab = sanitize_key( $_REQUEST['tab'] ?? 'main' );
+        return in_array( $tab, $allowed, true ) ? $tab : 'main';
     }
 
     /* ---------------- Actions ---------------- */
@@ -427,14 +474,226 @@ if ( $id > 0 ) {
             $ok = $wpdb->update( $fw_table, $data, array( 'id' => $id ) );
             if ( $ok === false ) {
                 set_transient( 'expman_firewalls_errors', array( 'שמירה נכשלה: ' . $wpdb->last_error ), 90 );
+                $this->log_firewall_event( $id, 'update', 'שמירה נכשלה', array( 'error' => $wpdb->last_error ), 'error' );
+            } else {
+                $this->log_firewall_event( $id, 'update', 'עודכן רישום חומת אש' );
             }
         } else {
             $data['created_at'] = current_time( 'mysql' );
             $ok = $wpdb->insert( $fw_table, $data );
             if ( $ok === false ) {
                 set_transient( 'expman_firewalls_errors', array( 'שמירה נכשלה: ' . $wpdb->last_error ), 90 );
+                $this->log_firewall_event( null, 'create', 'שמירה נכשלה', array( 'error' => $wpdb->last_error ), 'error' );
+            } else {
+                $new_id = $wpdb->insert_id;
+                $this->log_firewall_event( $new_id, 'create', 'נוסף רישום חומת אש' );
             }
         }
+    }
+
+    private function action_save_forticloud_settings() {
+        $api_id     = sanitize_text_field( $_POST['forticloud_api_id'] ?? '' );
+        $client_id  = sanitize_text_field( $_POST['forticloud_client_id'] ?? '' );
+        $base_url   = esc_url_raw( $_POST['forticloud_base_url'] ?? '' );
+        $secret_new = isset( $_POST['forticloud_api_secret'] ) ? trim( (string) wp_unslash( $_POST['forticloud_api_secret'] ) ) : '';
+
+        $forti_settings = $this->get_forticloud_settings();
+        $forti_settings['api_id'] = $api_id;
+        $forti_settings['client_id'] = $client_id !== '' ? $client_id : 'assetmanagement';
+        $forti_settings['base_url'] = $base_url;
+
+        if ( $secret_new !== '' ) {
+            $forti_settings['api_secret'] = $this->encrypt_secret( $secret_new );
+        }
+
+        $this->update_forticloud_settings( $forti_settings );
+        $this->add_notice( 'הגדרות FortiCloud נשמרו.' );
+        $this->log_firewall_event( null, 'forticloud_settings', 'הגדרות FortiCloud נשמרו' );
+    }
+
+    private function action_sync_forticloud_assets() {
+        $settings = $this->get_forticloud_settings();
+        $api_id = $settings['api_id'] ?? '';
+        $client_id = $settings['client_id'] ?? 'assetmanagement';
+        $base_url = $settings['base_url'] ?? '';
+        $secret = $this->decrypt_secret( $settings['api_secret'] ?? array() );
+
+        $this->log_firewall_event( null, 'forticloud_sync', 'התחלת סנכרון נכסים' );
+
+        if ( $api_id === '' || $client_id === '' || $secret === '' ) {
+            $this->add_notice( 'חסרים פרטי התחברות ל-FortiCloud. נא לעדכן בהגדרות.', 'error' );
+            $this->log_firewall_event( null, 'forticloud_sync', 'חסרים פרטי התחברות ל-FortiCloud', array(), 'error' );
+            return;
+        }
+
+        if ( $base_url === '' ) {
+            $base_url = 'https://api.forticloud.com';
+        }
+
+        $endpoints = $this->get_forticloud_endpoints();
+        $token_url = rtrim( $base_url, '/' ) . ( $endpoints['token'] ?? '' );
+
+        $token_body = array(
+            'grant_type'    => 'client_credentials',
+            'client_id'     => $client_id,
+            'client_secret' => $secret,
+            'api_id'        => $api_id,
+            'scope'         => 'assetmanagement',
+        );
+        $token_body = apply_filters( 'expman_forticloud_token_request_body', $token_body, $settings );
+
+        $token_response = wp_remote_post( $token_url, array(
+            'timeout' => 20,
+            'headers' => array( 'Content-Type' => 'application/x-www-form-urlencoded' ),
+            'body'    => $token_body,
+        ) );
+
+        if ( is_wp_error( $token_response ) ) {
+            $this->add_notice( 'שגיאה בקבלת טוקן: ' . $token_response->get_error_message(), 'error' );
+            $this->log_firewall_event( null, 'forticloud_sync', 'שגיאה בקבלת טוקן', array( 'error' => $token_response->get_error_message() ), 'error' );
+            return;
+        }
+
+        $token_data = json_decode( wp_remote_retrieve_body( $token_response ), true );
+        $access_token = $token_data['access_token'] ?? '';
+        if ( $access_token === '' ) {
+            $this->add_notice( 'לא התקבל access token מהשרת.', 'error' );
+            $this->log_firewall_event( null, 'forticloud_sync', 'לא התקבל access token', array( 'response' => $token_data ), 'error' );
+            return;
+        }
+
+        $assets_url = rtrim( $base_url, '/' ) . ( $endpoints['assets'] ?? '' );
+        $assets_response = wp_remote_get( $assets_url, array(
+            'timeout' => 30,
+            'headers' => array(
+                'Authorization' => 'Bearer ' . $access_token,
+                'Accept'        => 'application/json',
+            ),
+        ) );
+
+        if ( is_wp_error( $assets_response ) ) {
+            $this->add_notice( 'שגיאה בשליפת נכסים: ' . $assets_response->get_error_message(), 'error' );
+            $this->log_firewall_event( null, 'forticloud_sync', 'שגיאה בשליפת נכסים', array( 'error' => $assets_response->get_error_message() ), 'error' );
+            return;
+        }
+
+        $assets_payload = json_decode( wp_remote_retrieve_body( $assets_response ), true );
+        $assets = $this->normalize_assets_payload( $assets_payload );
+
+        if ( empty( $assets ) ) {
+            $this->add_notice( 'לא נמצאו נכסים לעדכון.', 'warning' );
+            $this->log_firewall_event( null, 'forticloud_sync', 'לא נמצאו נכסים לעדכון', array( 'response' => $assets_payload ), 'warning' );
+            return;
+        }
+
+        $saved = $this->upsert_forticloud_assets( $assets );
+        $this->add_notice( 'סנכרון הושלם. עודכנו ' . intval( $saved ) . ' נכסים.' );
+        $this->log_firewall_event( null, 'forticloud_sync', 'סנכרון הושלם', array( 'count' => intval( $saved ) ) );
+    }
+
+    private function action_map_forticloud_asset() {
+        global $wpdb;
+        $assets_table = $wpdb->prefix . self::TABLE_FORTICLOUD_ASSETS;
+        $fw_table = $wpdb->prefix . self::TABLE_FIREWALLS;
+        $types_table = $wpdb->prefix . self::TABLE_TYPES;
+        $cust_table = $wpdb->prefix . 'dc_customers';
+
+        $asset_id = intval( $_POST['asset_id'] ?? 0 );
+        $customer_id = intval( $_POST['customer_id'] ?? 0 );
+
+        if ( $asset_id <= 0 || $customer_id <= 0 ) {
+            $this->add_notice( 'יש לבחור לקוח לשיוך.', 'error' );
+            return;
+        }
+
+        $asset = $wpdb->get_row( $wpdb->prepare( "SELECT * FROM {$assets_table} WHERE id=%d", $asset_id ) );
+        if ( ! $asset ) {
+            $this->add_notice( 'נכס לא נמצא.', 'error' );
+            return;
+        }
+
+        $customer = $wpdb->get_row( $wpdb->prepare( "SELECT id, customer_number, customer_name FROM {$cust_table} WHERE id=%d AND is_deleted=0", $customer_id ) );
+        if ( ! $customer ) {
+            $this->add_notice( 'לקוח לא נמצא.', 'error' );
+            return;
+        }
+
+        $wpdb->update(
+            $assets_table,
+            array(
+                'customer_id'             => $customer->id,
+                'customer_number_snapshot'=> $customer->customer_number,
+                'customer_name_snapshot'  => $customer->customer_name,
+                'mapped_at'               => current_time( 'mysql' ),
+                'updated_at'              => current_time( 'mysql' ),
+            ),
+            array( 'id' => $asset_id ),
+            array( '%d', '%s', '%s', '%s', '%s' ),
+            array( '%d' )
+        );
+
+        $vendor = sanitize_text_field( $asset->category_name ?? '' );
+        $model  = sanitize_text_field( $asset->model_name ?? '' );
+        $box_type_id = null;
+        if ( $vendor !== '' && $model !== '' ) {
+            $existing = $wpdb->get_var( $wpdb->prepare( "SELECT id FROM {$types_table} WHERE vendor=%s AND model=%s", $vendor, $model ) );
+            if ( $existing ) {
+                $box_type_id = intval( $existing );
+            } else {
+                $wpdb->insert(
+                    $types_table,
+                    array(
+                        'vendor'     => $vendor,
+                        'model'      => $model,
+                        'created_at' => current_time( 'mysql' ),
+                        'updated_at' => current_time( 'mysql' ),
+                    ),
+                    array( '%s', '%s', '%s', '%s' )
+                );
+                $box_type_id = intval( $wpdb->insert_id );
+            }
+        }
+
+        $expiry_date = '';
+        if ( ! empty( $asset->expiration_date ) ) {
+            $expiry_date = date( 'Y-m-d', strtotime( $asset->expiration_date ) );
+        }
+
+        $existing_fw = $wpdb->get_var( $wpdb->prepare( "SELECT id FROM {$fw_table} WHERE serial_number=%s AND deleted_at IS NULL LIMIT 1", $asset->serial_number ) );
+        $fw_data = array(
+            'customer_id'     => $customer->id,
+            'customer_number' => $customer->customer_number,
+            'customer_name'   => $customer->customer_name,
+            'serial_number'   => $asset->serial_number,
+            'is_managed'      => 1,
+            'track_only'      => 0,
+            'box_type_id'     => $box_type_id,
+            'expiry_date'     => $expiry_date !== '' ? $expiry_date : null,
+            'updated_at'      => current_time( 'mysql' ),
+        );
+
+        if ( $existing_fw ) {
+            $wpdb->update( $fw_table, $fw_data, array( 'id' => intval( $existing_fw ) ) );
+            $this->log_firewall_event( intval( $existing_fw ), 'map_update', 'עודכן רישום חומת אש משיוך FortiCloud', array( 'serial' => $asset->serial_number ) );
+        } else {
+            $fw_data['created_at'] = current_time( 'mysql' );
+            $wpdb->insert( $fw_table, $fw_data );
+            $this->log_firewall_event( $wpdb->insert_id, 'map_create', 'נוסף רישום חומת אש משיוך FortiCloud', array( 'serial' => $asset->serial_number ) );
+        }
+
+        $this->update_forticloud_description( $asset, $customer );
+
+        $redirect_url = add_query_arg(
+            array(
+                'expman_msg' => rawurlencode( 'שיוך הושלם' ),
+                'highlight'  => rawurlencode( $asset->serial_number ),
+                'tab'        => 'main',
+            ),
+            remove_query_arg( array( 'expman_msg', 'highlight', 'tab' ) )
+        );
+
+        wp_safe_redirect( $redirect_url );
+        exit;
     }
 
     private function action_save_forticloud_settings() {
@@ -643,6 +902,7 @@ if ( $id > 0 ) {
             array( '%s' ),
             array( '%d' )
         );
+        $this->log_firewall_event( $id, 'delete', 'רישום הועבר לסל המחזור' );
     }
 
     private function action_restore_firewall() {
@@ -658,6 +918,7 @@ if ( $id > 0 ) {
             array( '%s' ),
             array( '%d' )
         );
+        $this->log_firewall_event( $id, 'restore', 'רישום שוחזר מסל המחזור' );
     }
 
     private function action_export_csv() {
@@ -847,18 +1108,22 @@ if ( $id > 0 ) {
                 if ( $ok === false ) {
                     $skipped++;
                     $errors[] = "שורה {$row_num}: עדכון נכשל: " . $wpdb->last_error;
+                    $this->log_firewall_event( $id, 'import_update', 'עדכון נכשל בייבוא', array( 'error' => $wpdb->last_error ), 'error' );
                     continue;
                 }
                 $updated++;
+                $this->log_firewall_event( $id, 'import_update', 'עודכן רישום בייבוא' );
             } else {
                 $payload['created_at'] = current_time( 'mysql' );
                 $ok = $wpdb->insert( $fw_table, $payload );
                 if ( $ok === false ) {
                     $skipped++;
                     $errors[] = "שורה {$row_num}: הוספה נכשלה: " . $wpdb->last_error;
+                    $this->log_firewall_event( null, 'import_create', 'הוספה נכשלה בייבוא', array( 'error' => $wpdb->last_error ), 'error' );
                     continue;
                 }
                 $imported++;
+                $this->log_firewall_event( $wpdb->insert_id, 'import_create', 'נוסף רישום בייבוא' );
             }
         }
 
@@ -1016,7 +1281,7 @@ if ( $id > 0 ) {
             $customer
         );
 
-        wp_remote_request( $update_url, array(
+        $update_response = wp_remote_request( $update_url, array(
             'method'  => 'PATCH',
             'timeout' => 20,
             'headers' => array(
@@ -1026,6 +1291,25 @@ if ( $id > 0 ) {
             ),
             'body'    => wp_json_encode( $payload ),
         ) );
+
+        if ( is_wp_error( $update_response ) ) {
+            $this->log_firewall_event( null, 'forticloud_update', 'שגיאה בעדכון תיאור', array( 'error' => $update_response->get_error_message() ), 'error' );
+            return;
+        }
+
+        $status = wp_remote_retrieve_response_code( $update_response );
+        if ( $status >= 400 ) {
+            $this->log_firewall_event(
+                null,
+                'forticloud_update',
+                'שגיאה בעדכון תיאור',
+                array(
+                    'status' => $status,
+                    'body'   => wp_remote_retrieve_body( $update_response ),
+                ),
+                'error'
+            );
+        }
     }
 
     /* ---------------- Data ---------------- */
@@ -1192,23 +1476,27 @@ echo '<style>.expman-frontend.expman-firewalls input,.expman-frontend.expman-fir
             echo '<div class="notice notice-' . esc_attr( $type ) . '"><p>' . esc_html( $notice['text'] ) . '</p></div>';
         }
 
-        $active = 'main';
+        $active = $this->get_active_tab();
         $this->render_internal_tabs( $active );
 
-        echo '<div data-expman-panel="main">';
+        echo '<div data-expman-panel="main"' . ( $active === 'main' ? '' : ' style="display:none;"' ) . '>';
         $this->render_main_tab();
         echo '</div>';
 
-        echo '<div data-expman-panel="bulk" style="display:none;">';
+        echo '<div data-expman-panel="bulk"' . ( $active === 'bulk' ? '' : ' style="display:none;"' ) . '>';
         $this->render_bulk_tab();
         echo '</div>';
 
-        echo '<div data-expman-panel="settings" style="display:none;">';
+        echo '<div data-expman-panel="settings"' . ( $active === 'settings' ? '' : ' style="display:none;"' ) . '>';
         $this->render_settings_tab();
         echo '</div>';
 
-        echo '<div data-expman-panel="trash" style="display:none;">';
+        echo '<div data-expman-panel="trash"' . ( $active === 'trash' ? '' : ' style="display:none;"' ) . '>';
         $this->render_trash_tab();
+        echo '</div>';
+
+        echo '<div data-expman-panel="logs"' . ( $active === 'logs' ? '' : ' style="display:none;"' ) . '>';
+        $this->render_logs_tab();
         echo '</div>';
 
         echo '<script>(function(){document.addEventListener("click",function(e){var t=e.target;if(t && t.matches("[data-expman-cancel-new]")){e.preventDefault();var f=document.querySelector(".expman-fw-form-wrap");if(f){f.style.display="none";}}if(t && t.matches("[data-expman-cancel-edit]")){e.preventDefault();document.querySelectorAll(".expman-inline-edit").forEach(function(r){r.remove();});}});})();</script>';
@@ -1223,18 +1511,33 @@ echo '<style>.expman-frontend.expman-firewalls input,.expman-frontend.expman-fir
             'main'     => 'רשימה ראשית',
             'bulk'     => 'עריכה קבוצתית',
             'settings' => 'הגדרות',
+            'logs'     => 'לוגים',
             'trash'    => 'סל מחזור',
         );
 
         echo '<div class="expman-internal-tabs" style="display:flex;gap:10px;flex-wrap:wrap;justify-content:flex-end;margin:10px 0">';
         foreach ( $tabs as $k => $label ) {
             $is = ( $k === $active ) ? '1' : '0';
-            echo '<a href="#' . esc_attr( $k ) . '" class="expman-tab-btn" data-expman-tab="' . esc_attr( $k ) . '" data-active="' . esc_attr( $is ) . '" style="background:#2f5ea8;color:#fff;text-decoration:none;padding:10px 14px;border-radius:6px;display:inline-block;font-weight:700;">' . esc_html( $label ) . '</a>';
+            $href = add_query_arg( 'tab', $k, remove_query_arg( 'tab' ) );
+            echo '<a href="' . esc_url( $href ) . '" class="expman-tab-btn" data-expman-tab="' . esc_attr( $k ) . '" data-active="' . esc_attr( $is ) . '" style="background:#2f5ea8;color:#fff;text-decoration:none;padding:10px 14px;border-radius:6px;display:inline-block;font-weight:700;">' . esc_html( $label ) . '</a>';
         }
         echo '</div>';
 
         echo '<script>(function(){
-          const dataEl = document.currentScript.previousElementSibling;function show(k){document.querySelectorAll("[data-expman-panel]").forEach(p=>{p.style.display=(p.getAttribute("data-expman-panel")==k)?"block":"none";});document.querySelectorAll(".expman-tab-btn").forEach(a=>{a.style.opacity=(a.getAttribute("data-expman-tab")==k)?"1":"0.85";});if(location.hash!=="#"+k){history.replaceState(null,"",location.pathname+location.search.split("#")[0]+"#"+k);}}document.querySelectorAll(".expman-tab-btn").forEach(a=>a.addEventListener("click",function(e){e.preventDefault();show(a.getAttribute("data-expman-tab"));}));var k=(location.hash||"").replace("#","");if(!k||!document.querySelector("[data-expman-panel=\""+k+"\"]")){k="main";}show(k);})();</script>' . "
+          const dataEl = document.currentScript.previousElementSibling;
+          function show(k){
+            document.querySelectorAll("[data-expman-panel]").forEach(p=>{p.style.display=(p.getAttribute("data-expman-panel")==k)?"block":"none";});
+            document.querySelectorAll(".expman-tab-btn").forEach(a=>{a.style.opacity=(a.getAttribute("data-expman-tab")==k)?"1":"0.85";});
+            const url=new URL(window.location.href);
+            url.searchParams.set("tab",k);
+            history.replaceState(null,"",url.toString());
+          }
+          document.querySelectorAll(".expman-tab-btn").forEach(a=>a.addEventListener("click",function(e){e.preventDefault();show(a.getAttribute("data-expman-tab"));}));
+          const params=new URLSearchParams(window.location.search);
+          var k=params.get("tab")||"main";
+          if(!document.querySelector("[data-expman-panel=\""+k+"\"]")){k="main";}
+          show(k);
+        })();</script>' . "
 ";
     }
 
@@ -1325,6 +1628,7 @@ echo '<style>.expman-frontend.expman-firewalls input,.expman-frontend.expman-fir
         echo '<form method="post" style="display:inline-block;margin:0 0 10px 0;">';
         wp_nonce_field( 'expman_firewalls' );
         echo '<input type="hidden" name="expman_action" value="sync_forticloud_assets">';
+        echo '<input type="hidden" name="tab" value="bulk">';
         echo '<button type="submit" class="button button-primary">סנכרן נכסים מ-FortiCloud</button>';
         echo '</form>';
         echo '<p style="margin-top:6px;color:#555;">מוצגים נכסים שאינם משויכים. לאחר שיוך ייווצר/יעודכן רישום בטבלת חומות אש.</p>';
@@ -1356,6 +1660,7 @@ echo '<style>.expman-frontend.expman-firewalls input,.expman-frontend.expman-fir
             echo '<form method="post" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:0;">';
             wp_nonce_field( 'expman_firewalls' );
             echo '<input type="hidden" name="expman_action" value="map_forticloud_asset">';
+            echo '<input type="hidden" name="tab" value="bulk">';
             echo '<input type="hidden" name="asset_id" value="' . esc_attr( $asset->id ) . '">';
             echo '<input type="hidden" name="customer_id" class="expman-customer-id" value="">';
             echo '<input type="text" class="expman-customer-search" placeholder="חפש לקוח..." style="min-width:220px;">';
@@ -1431,8 +1736,10 @@ echo '<style>.expman-frontend.expman-firewalls input,.expman-frontend.expman-fir
         echo '<form method="post" style="max-width:680px;">';
         wp_nonce_field( 'expman_firewalls' );
         echo '<input type="hidden" name="expman_action" value="save_forticloud_settings">';
+        echo '<input type="hidden" name="tab" value="settings">';
 
         echo '<h3>FortiCloud</h3>';
+        echo '<p style="max-width:640px;color:#555;">כדי שהסנכרון יעבוד יש ליצור IAM API User עם הרשאות Asset Management ולוודא שהוגדר Client ID כ-<strong>assetmanagement</strong>. לאחר שמירת ההגדרות ניתן לבצע סנכרון מהטאב עריכה קבוצתית.</p>';
         echo '<table class="form-table"><tbody>';
         echo '<tr><th><label for="forticloud_api_id">forticloud_api_id</label></th><td><input type="text" id="forticloud_api_id" name="forticloud_api_id" value="' . esc_attr( $api_id ) . '" class="regular-text"></td></tr>';
         echo '<tr><th><label for="forticloud_client_id">forticloud_client_id</label></th><td><input type="text" id="forticloud_client_id" name="forticloud_client_id" value="' . esc_attr( $client_id ) . '" class="regular-text"></td></tr>';
@@ -1462,6 +1769,47 @@ echo '<style>.expman-frontend.expman-firewalls input,.expman-frontend.expman-fir
         echo '<h3>סל מחזור (חומות אש)</h3>';
         $rows = $this->get_firewalls_rows( $filters, $orderby, $order, true, 0 );
         $this->render_table( $rows, $filters, $orderby, $order, true, null );
+    }
+
+    private function render_logs_tab() {
+        global $wpdb;
+        $logs_table = $wpdb->prefix . self::TABLE_FIREWALL_LOGS;
+        $logs = $wpdb->get_results( "SELECT * FROM {$logs_table} ORDER BY id DESC LIMIT 200" );
+
+        echo '<h3>לוגים (חומות אש)</h3>';
+        echo '<p style="color:#555;">מציג 200 רשומות אחרונות של יצירה, עדכון, מחיקה וסנכרון.</p>';
+
+        if ( empty( $logs ) ) {
+            echo '<div class="notice notice-info"><p>אין לוגים להצגה.</p></div>';
+            return;
+        }
+
+        echo '<table class="widefat striped">';
+        echo '<thead><tr>';
+        echo '<th>זמן</th>';
+        echo '<th>פעולה</th>';
+        echo '<th>רמה</th>';
+        echo '<th>ID חומת אש</th>';
+        echo '<th>הודעה</th>';
+        echo '<th>פרטים</th>';
+        echo '</tr></thead><tbody>';
+
+        foreach ( $logs as $log ) {
+            $context = '';
+            if ( ! empty( $log->context ) ) {
+                $context = '<pre style="white-space:pre-wrap;margin:0;">' . esc_html( $log->context ) . '</pre>';
+            }
+            echo '<tr>';
+            echo '<td>' . esc_html( $log->created_at ) . '</td>';
+            echo '<td>' . esc_html( $log->action ) . '</td>';
+            echo '<td>' . esc_html( $log->level ) . '</td>';
+            echo '<td>' . esc_html( $log->firewall_id ) . '</td>';
+            echo '<td>' . esc_html( $log->message ) . '</td>';
+            echo '<td>' . $context . '</td>';
+            echo '</tr>';
+        }
+
+        echo '</tbody></table>';
     }
 
     private function get_distinct_type_values( $field ) {
