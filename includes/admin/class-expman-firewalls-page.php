@@ -688,6 +688,8 @@ if ( $id > 0 ) {
 .fw-form input,.fw-form select{height:24px !important;padding:3px 6px !important;font-size:13px !important;}
 .fw-form textarea{min-height:60px !important;font-size:13px !important;}
 .expman-btn{padding:6px 10px !important;font-size:12px !important;}
+.expman-btn-clear{background:transparent;border:0;box-shadow:none;padding:0 !important;color:#2271b1;cursor:pointer;}
+.expman-btn-clear:hover{text-decoration:underline;}
 </style>';
 echo '<style>.expman-frontend.expman-firewalls input,.expman-frontend.expman-firewalls select{height:28px!important;line-height:28px!important;padding:2px 6px!important;font-size:13px!important}.expman-frontend.expman-firewalls textarea{min-height:60px!important;font-size:13px!important;padding:6px!important}.expman-frontend.expman-firewalls .button{padding:4px 10px!important;height:30px!important}</style>';
         echo '<div class="expman-frontend expman-firewalls" style="direction:rtl;">';
@@ -846,135 +848,150 @@ echo '<style>.expman-frontend.expman-firewalls input,.expman-frontend.expman-fir
     private function render_table( $rows, $filters, $orderby, $order, $is_trash, $clear_url = null, $is_tracking_table = false ) {
         $base = remove_query_arg( array( 'expman_msg' ) );
         $uid  = wp_generate_uuid4();
+        $show_filters = ! $is_tracking_table;
 
-        echo '<form method="get" style="margin:0 0 10px 0;">';
+        if ( $show_filters ) {
+            echo '<form method="get" style="margin:0 0 10px 0;">';
+        }
 
         $vendor_opts = $this->get_distinct_type_values( 'vendor' );
         $model_opts  = $this->get_distinct_type_values( 'model' );
         $vendor_sel  = array_filter( array_map( 'trim', explode( ',', (string) ( $filters['vendor'] ?? '' ) ) ) );
         $model_sel   = array_filter( array_map( 'trim', explode( ',', (string) ( $filters['model'] ?? '' ) ) ) );
 
-        echo '<div id="expman-ms-data-' . esc_attr( $uid ) . '" style="display:none"'
-            . ' data-vendor-options="' . esc_attr( wp_json_encode( $vendor_opts ) ) . '"'
-            . ' data-model-options="'  . esc_attr( wp_json_encode( $model_opts ) )  . '"'
-            . ' data-vendor-selected="' . esc_attr( wp_json_encode( array_values( $vendor_sel ) ) ) . '"'
-            . ' data-model-selected="'  . esc_attr( wp_json_encode( array_values( $model_sel ) ) )  . '"'
-            . '></div>';
+        if ( $show_filters ) {
+            echo '<div id="expman-ms-data-' . esc_attr( $uid ) . '" style="display:none"'
+                . ' data-vendor-options="' . esc_attr( wp_json_encode( $vendor_opts ) ) . '"'
+                . ' data-model-options="'  . esc_attr( wp_json_encode( $model_opts ) )  . '"'
+                . ' data-vendor-selected="' . esc_attr( wp_json_encode( array_values( $vendor_sel ) ) ) . '"'
+                . ' data-model-selected="'  . esc_attr( wp_json_encode( array_values( $model_sel ) ) )  . '"'
+                . '></div>';
 
-        echo '<script>
-        (function(){
-          const dataEl = document.currentScript.previousElementSibling;
-          function get(key){try{return JSON.parse(document.getElementById("expman-ms-data-' . esc_js( $uid ) . '").dataset[key]||"[]")}catch(e){return []}}
-          const optsVendor=get("vendorOptions"), optsModel=get("modelOptions");
-          const selVendor=new Set(get("vendorSelected")), selModel=new Set(get("modelSelected"));
+            echo '<script>
+            (function(){
+              const dataEl = document.currentScript.previousElementSibling;
+              function get(key){try{return JSON.parse(document.getElementById("expman-ms-data-' . esc_js( $uid ) . '").dataset[key]||"[]")}catch(e){return []}}
+              const optsVendor=get("vendorOptions"), optsModel=get("modelOptions");
+              const selVendor=new Set(get("vendorSelected")), selModel=new Set(get("modelSelected"));
 
-          function build(th, key, options, selected){
-            const hidden=document.createElement("input");
-            hidden.type="hidden"; hidden.name = key==="vendor" ? "f_vendor" : "f_model";
-            hidden.value=Array.from(selected).join(",");
+              function build(th, key, options, selected){
+                const hidden=document.createElement("input");
+                hidden.type="hidden"; hidden.name = key==="vendor" ? "f_vendor" : "f_model";
+                hidden.value=Array.from(selected).join(",");
 
-            const btn=document.createElement("button");
-            btn.type="button";
-            btn.className="expman-btn secondary";
-            btn.style.width="100%"; btn.style.height="32px";
-            btn.textContent = selected.size ? ("נבחרו " + selected.size) : "בחר...";
+                const btn=document.createElement("button");
+                btn.type="button";
+                btn.className="expman-btn secondary";
+                btn.style.width="100%"; btn.style.height="32px";
+                btn.textContent = selected.size ? ("נבחרו " + selected.size) : "בחר...";
 
-            const panel=document.createElement("div");
-            panel.className="expman-ms-panel";
-            panel.style.position="absolute"; panel.style.zIndex="9999";
-            panel.style.background="#fff"; panel.style.border="1px solid #ccc";
-            panel.style.borderRadius="10px"; panel.style.padding="10px";
-            panel.style.minWidth="240px"; panel.style.maxHeight="260px";
-            panel.style.overflow="auto"; panel.style.display="none";
+                const panel=document.createElement("div");
+                panel.className="expman-ms-panel";
+                panel.style.position="absolute"; panel.style.zIndex="9999";
+                panel.style.background="#fff"; panel.style.border="1px solid #ccc";
+                panel.style.borderRadius="10px"; panel.style.padding="10px";
+                panel.style.minWidth="240px"; panel.style.maxHeight="260px";
+                panel.style.overflow="auto"; panel.style.display="none";
 
-            const search=document.createElement("input");
-            search.type="text"; search.placeholder="חיפוש...";
-            search.style.width="100%"; search.style.marginBottom="8px";
+                const search=document.createElement("input");
+                search.type="text"; search.placeholder="חיפוש...";
+                search.style.width="100%"; search.style.marginBottom="8px";
 
-            const list=document.createElement("div");
-            function render(q){
-              list.innerHTML="";
-              const qq=(q||"").toLowerCase();
-              options.filter(v=>!qq||String(v).toLowerCase().includes(qq)).forEach(v=>{
-                const label=document.createElement("label");
-                label.style.display="flex"; label.style.gap="8px"; label.style.alignItems="center";
-                label.style.margin="4px 0";
-                const cb=document.createElement("input");
-                cb.type="checkbox"; cb.checked=selected.has(v);
-                cb.addEventListener("change",()=>{cb.checked?selected.add(v):selected.delete(v);});
-                const span=document.createElement("span"); span.textContent=v;
-                label.appendChild(cb); label.appendChild(span);
-                list.appendChild(label);
-              });
+                const list=document.createElement("div");
+                function render(q){
+                  list.innerHTML="";
+                  const qq=(q||"").toLowerCase();
+                  options.filter(v=>!qq||String(v).toLowerCase().includes(qq)).forEach(v=>{
+                    const label=document.createElement("label");
+                    label.style.display="flex"; label.style.gap="8px"; label.style.alignItems="center";
+                    label.style.margin="4px 0";
+                    const cb=document.createElement("input");
+                    cb.type="checkbox"; cb.checked=selected.has(v);
+                    cb.addEventListener("change",()=>{cb.checked?selected.add(v):selected.delete(v);});
+                    const span=document.createElement("span"); span.textContent=v;
+                    label.appendChild(cb); label.appendChild(span);
+                    list.appendChild(label);
+                  });
+                }
+                search.addEventListener("input",()=>render(search.value));
+                render("");
+                const actions=document.createElement("div");
+                actions.style.display="flex"; actions.style.gap="8px"; actions.style.marginTop="10px";
+
+                const clear=document.createElement("button");
+                clear.type="button"; clear.className="expman-btn expman-btn-clear"; clear.textContent="נקה";
+                clear.addEventListener("click",()=>{selected.clear(); render(search.value);});
+
+                actions.appendChild(clear);
+                panel.appendChild(search); panel.appendChild(list); panel.appendChild(actions);
+
+                th.style.position="relative";
+                th.appendChild(hidden); th.appendChild(btn); th.appendChild(panel);
+
+                btn.addEventListener("click",()=>{ panel.style.display = panel.style.display==="none"?"block":"none"; });
+                document.addEventListener("click",(e)=>{ if(!th.contains(e.target)) panel.style.display="none"; });
+
+                th.closest("form").addEventListener("submit",()=>{ hidden.value=Array.from(selected).join(","); });
+              }
+
+              document.querySelectorAll("th.expman-ms-wrap[data-ms=vendor]").forEach(th=>build(th,"vendor",optsVendor,selVendor));
+              document.querySelectorAll("th.expman-ms-wrap[data-ms=model]").forEach(th=>build(th,"model",optsModel,selModel));
+            })();
+            </script>';
+
+            foreach ( $_GET as $k => $v ) {
+                if ( strpos( $k, 'f_' ) === 0 || in_array( $k, array( 'orderby','order' ), true ) ) { continue; }
+                echo '<input type="hidden" name="' . esc_attr( $k ) . '" value="' . esc_attr( $v ) . '">';
             }
-            search.addEventListener("input",()=>render(search.value));
-            render("");
-            const actions=document.createElement("div");
-            actions.style.display="flex"; actions.style.gap="8px"; actions.style.marginTop="10px";
-
-            const clear=document.createElement("button");
-            clear.type="button"; clear.className="expman-btn secondary"; clear.textContent="נקה";
-            clear.addEventListener("click",()=>{selected.clear(); render(search.value);});
-
-            actions.appendChild(clear);
-            panel.appendChild(search); panel.appendChild(list); panel.appendChild(actions);
-
-            th.style.position="relative";
-            th.appendChild(hidden); th.appendChild(btn); th.appendChild(panel);
-
-            btn.addEventListener("click",()=>{ panel.style.display = panel.style.display==="none"?"block":"none"; });
-            document.addEventListener("click",(e)=>{ if(!th.contains(e.target)) panel.style.display="none"; });
-
-            th.closest("form").addEventListener("submit",()=>{ hidden.value=Array.from(selected).join(","); });
-          }
-
-          document.querySelectorAll("th.expman-ms-wrap[data-ms=vendor]").forEach(th=>build(th,"vendor",optsVendor,selVendor));
-          document.querySelectorAll("th.expman-ms-wrap[data-ms=model]").forEach(th=>build(th,"model",optsModel,selModel));
-        })();
-        </script>';
-
-        foreach ( $_GET as $k => $v ) {
-            if ( strpos( $k, 'f_' ) === 0 || in_array( $k, array( 'orderby','order' ), true ) ) { continue; }
-            echo '<input type="hidden" name="' . esc_attr( $k ) . '" value="' . esc_attr( $v ) . '">';
         }
 
         echo '<table class="widefat striped">';
         echo '<thead><tr>';
 
-                $this->th_sort( 'customer_number', 'מספר לקוח', $orderby, $order, $base );
+        $this->th_sort( 'customer_number', 'מספר לקוח', $orderby, $order, $base );
         $this->th_sort( 'customer_name', 'שם לקוח', $orderby, $order, $base );
         $this->th_sort( 'branch', 'סניף', $orderby, $order, $base );
         $this->th_sort( 'serial_number', 'מספר סידורי', $orderby, $order, $base );
-                $this->th_sort( 'days_to_renew', 'ימים לחידוש', $orderby, $order, $base );
+        $this->th_sort( 'days_to_renew', 'ימים לחידוש', $orderby, $order, $base );
         $this->th_sort( 'vendor', 'יצרן', $orderby, $order, $base );
         $this->th_sort( 'model', 'דגם', $orderby, $order, $base );
-                echo '<th>גישה</th>';
+        $this->th_sort( 'is_managed', 'ניהול', $orderby, $order, $base );
+        echo '<th>גישה</th>';
         echo '<th>פעולות</th>';
         echo '</tr>';
 
-        // filter row
-        echo '<tr class="expman-filter-row">';
-        echo '<th><input style="width:100%" name="f_customer_number" value="' . esc_attr( $filters['customer_number'] ) . '" placeholder="סינון..."></th>';
-        echo '<th><input style="width:100%" name="f_customer_name" value="' . esc_attr( $filters['customer_name'] ) . '" placeholder="סינון..."></th>';
-        echo '<th><input style="width:100%" name="f_branch" value="' . esc_attr( $filters['branch'] ) . '" placeholder="סינון..."></th>';
-        echo '<th><input style="width:100%" name="f_serial_number" value="' . esc_attr( $filters['serial_number'] ) . '" placeholder="סינון..."></th>';
-        echo '<th></th>'; // days_to_renew
-        echo '<th class="expman-ms-wrap" data-ms="vendor"></th>';
-        echo '<th class="expman-ms-wrap" data-ms="model"></th>';
-        echo '<th></th>';
-        echo '<th></th>'; // access
-        echo '<th style="white-space:nowrap;">';
-        echo '<button class="expman-btn secondary" type="submit">סנן</button> ';
-        if ( $clear_url ) {
-            echo '<a class="expman-btn secondary" style="display:inline-block;text-decoration:none;" href="' . esc_url( $clear_url ) . '">נקה</a>';
+        if ( $show_filters ) {
+            // filter row
+            echo '<tr class="expman-filter-row">';
+            echo '<th><input style="width:100%" name="f_customer_number" value="' . esc_attr( $filters['customer_number'] ) . '" placeholder="סינון..."></th>';
+            echo '<th><input style="width:100%" name="f_customer_name" value="' . esc_attr( $filters['customer_name'] ) . '" placeholder="סינון..."></th>';
+            echo '<th><input style="width:100%" name="f_branch" value="' . esc_attr( $filters['branch'] ) . '" placeholder="סינון..."></th>';
+            echo '<th><input style="width:100%" name="f_serial_number" value="' . esc_attr( $filters['serial_number'] ) . '" placeholder="סינון..."></th>';
+            echo '<th></th>'; // days_to_renew
+            echo '<th class="expman-ms-wrap" data-ms="vendor"></th>';
+            echo '<th class="expman-ms-wrap" data-ms="model"></th>';
+            echo '<th><select name="f_is_managed" style="width:100%;">';
+            echo '<option value="">הכל</option>';
+            echo '<option value="1" ' . selected( $filters['is_managed'], '1', false ) . '>שלנו</option>';
+            echo '<option value="0" ' . selected( $filters['is_managed'], '0', false ) . '>לא שלנו</option>';
+            echo '</select></th>';
+            echo '<th></th>'; // access
+            echo '<th style="white-space:nowrap;">';
+            echo '<button class="expman-btn secondary" type="submit">סנן</button> ';
+            if ( $clear_url ) {
+                echo '<a class="expman-btn secondary" style="display:inline-block;text-decoration:none;" href="' . esc_url( $clear_url ) . '">נקה</a>';
+            }
+            echo '</th>';
+            echo '</tr>';
         }
-        echo '</th>';
-        echo '</tr>';
 
         echo '</thead><tbody>';
 
         if ( empty( $rows ) ) {
-            echo '<tr><td colspan="9">אין נתונים.</td></tr></tbody></table></form>';
+            echo '<tr><td colspan="10">אין נתונים.</td></tr></tbody></table>';
+            if ( $show_filters ) {
+                echo '</form>';
+            }
             return;
         }
 
@@ -1023,13 +1040,13 @@ echo '<style>.expman-frontend.expman-firewalls input,.expman-frontend.expman-fir
 
             // Inline edit form row (hidden)
             echo '<tr class="expman-inline-form" data-for="' . esc_attr( $r->id ) . '" style="display:none;background:#fff;">';
-            echo '<td colspan="9">';
+            echo '<td colspan="10">';
             $this->render_form( intval( $r->id ), $r );
             echo '</td></tr>';
 
             // Details row (click row expands)
             echo '<tr class="expman-details" data-for="' . esc_attr( $r->id ) . '" style="display:none;background:#fafafa;">';
-            echo '<td colspan="9">';
+            echo '<td colspan="10">';
             echo '<div style="display:flex;gap:20px;flex-wrap:wrap;">';
             echo '<div style="min-width:260px;"><strong>הערה קבועה:</strong><div style="white-space:pre-wrap;">' . esc_html( (string) $r->notes ) . '</div></div>';
             echo '<div style="min-width:260px;"><strong>הודעה זמנית:</strong><div style="white-space:pre-wrap;">' . esc_html( intval( $r->temp_notice_enabled ) ? (string) $r->temp_notice : '' ) . '</div></div>';
@@ -1039,7 +1056,9 @@ echo '<style>.expman-frontend.expman-firewalls input,.expman-frontend.expman-fir
         }
 
         echo '</tbody></table>';
-        echo '</form>';
+        if ( $show_filters ) {
+            echo '</form>';
+        }
 
         echo '<script>(function(){
           const dataEl = document.currentScript.previousElementSibling;';
