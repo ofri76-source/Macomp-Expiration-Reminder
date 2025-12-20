@@ -285,6 +285,16 @@ dbDelta( $sql_types );
 
     private function log_firewall_event( $firewall_id, $action, $message = '', $context = array(), $level = 'info' ) {
         global $wpdb;
+        $user = wp_get_current_user();
+        if ( $user && $user->exists() ) {
+            if ( empty( $context['user'] ) || ! is_array( $context['user'] ) ) {
+                $context['user'] = array(
+                    'id'    => $user->ID,
+                    'login' => $user->user_login,
+                    'name'  => $user->display_name,
+                );
+            }
+        }
         $logs_table = $wpdb->prefix . self::TABLE_FIREWALL_LOGS;
         $wpdb->insert(
             $logs_table,
@@ -293,11 +303,72 @@ dbDelta( $sql_types );
                 'action'      => sanitize_text_field( $action ),
                 'level'       => sanitize_text_field( $level ),
                 'message'     => sanitize_text_field( $message ),
-                'context'     => ! empty( $context ) ? wp_json_encode( $context ) : null,
+                'context'     => ! empty( $context ) ? wp_json_encode( $context, JSON_UNESCAPED_UNICODE ) : null,
                 'created_at'  => current_time( 'mysql' ),
             ),
             array( '%d', '%s', '%s', '%s', '%s', '%s' )
         );
+    }
+
+    private function format_log_value( $value, $type = 'text' ) {
+        if ( $type === 'bool' ) {
+            return intval( $value ) ? 'כן' : 'לא';
+        }
+        if ( $type === 'date' ) {
+            $value = trim( (string) $value );
+            return $value !== '' ? date_i18n( 'd/m/Y', strtotime( $value ) ) : '';
+        }
+
+        return (string) $value;
+    }
+
+    private function format_log_context( $context_json ) {
+        if ( empty( $context_json ) ) {
+            return '';
+        }
+
+        $context = json_decode( (string) $context_json, true );
+        if ( ! is_array( $context ) ) {
+            return '<pre style="white-space:pre-wrap;margin:0;">' . esc_html( (string) $context_json ) . '</pre>';
+        }
+
+        $html = '';
+        if ( ! empty( $context['user'] ) && is_array( $context['user'] ) ) {
+            $user = $context['user'];
+            $name = (string) ( $user['name'] ?? '' );
+            $login = (string) ( $user['login'] ?? '' );
+            $label = $name !== '' ? $name : $login;
+            if ( $label !== '' ) {
+                $html .= '<div><strong>משתמש:</strong> ' . esc_html( $label );
+                if ( $login !== '' && $login !== $label ) {
+                    $html .= ' (' . esc_html( $login ) . ')';
+                }
+                $html .= '</div>';
+            }
+        }
+
+        if ( ! empty( $context['changes'] ) && is_array( $context['changes'] ) ) {
+            $items = array();
+            foreach ( $context['changes'] as $change ) {
+                if ( empty( $change['field'] ) ) {
+                    continue;
+                }
+                $items[] = '<li><strong>' . esc_html( (string) $change['field'] ) . '</strong>: '
+                    . esc_html( (string) ( $change['from'] ?? '' ) ) . ' → '
+                    . esc_html( (string) ( $change['to'] ?? '' ) ) . '</li>';
+            }
+            if ( ! empty( $items ) ) {
+                $html .= '<div><strong>שינויים:</strong><ul style="margin:4px 0 0 18px;">' . implode( '', $items ) . '</ul></div>';
+            }
+        }
+
+        $extra = $context;
+        unset( $extra['user'], $extra['changes'] );
+        if ( ! empty( $extra ) ) {
+            $html .= '<pre style="white-space:pre-wrap;margin:6px 0 0;">' . esc_html( wp_json_encode( $extra, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT ) ) . '</pre>';
+        }
+
+        return $html;
     }
 
     private function new_request_id() {
@@ -438,6 +509,17 @@ dbDelta( $sql_types );
         $vendor      = sanitize_text_field( $_POST['vendor'] ?? '' );
         $model       = sanitize_text_field( $_POST['model'] ?? '' );
 
+        $prev_row = null;
+        if ( $id > 0 ) {
+            $prev_row = $wpdb->get_row(
+                $wpdb->prepare(
+                    "SELECT fw.*, bt.vendor, bt.model FROM {$fw_table} fw LEFT JOIN {$types_table} bt ON bt.id = fw.box_type_id WHERE fw.id=%d",
+                    $id
+                ),
+                ARRAY_A
+            );
+        }
+
         $errors = array();
         if ( $serial === '' ) { $errors[] = 'מספר סידורי חובה.'; }
 
@@ -543,7 +625,38 @@ if ( $id > 0 ) {
                 set_transient( 'expman_firewalls_errors', array( 'שמירה נכשלה: ' . $wpdb->last_error ), 90 );
                 $this->log_firewall_event( $id, 'update', 'שמירה נכשלה', array( 'error' => $wpdb->last_error ), 'error' );
             } else {
-                $this->log_firewall_event( $id, 'update', 'עודכן רישום חומת אש' );
+                $changes = array();
+                if ( ! empty( $prev_row ) ) {
+                    $fields = array(
+                        array( 'key' => 'customer_number', 'label' => 'מספר לקוח', 'type' => 'text', 'from' => $prev_row['customer_number'] ?? '', 'to' => $customer_number ),
+                        array( 'key' => 'customer_name', 'label' => 'שם לקוח', 'type' => 'text', 'from' => $prev_row['customer_name'] ?? '', 'to' => $customer_name ),
+                        array( 'key' => 'branch', 'label' => 'סניף', 'type' => 'text', 'from' => $prev_row['branch'] ?? '', 'to' => $branch ),
+                        array( 'key' => 'serial_number', 'label' => 'מספר סידורי', 'type' => 'text', 'from' => $prev_row['serial_number'] ?? '', 'to' => $serial ),
+                        array( 'key' => 'is_managed', 'label' => 'ניהול', 'type' => 'bool', 'from' => $prev_row['is_managed'] ?? 0, 'to' => $is_managed ),
+                        array( 'key' => 'track_only', 'label' => 'לקוח למעקב', 'type' => 'bool', 'from' => $prev_row['track_only'] ?? 0, 'to' => $track_only ),
+                        array( 'key' => 'vendor', 'label' => 'יצרן', 'type' => 'text', 'from' => $prev_row['vendor'] ?? '', 'to' => $vendor ),
+                        array( 'key' => 'model', 'label' => 'דגם', 'type' => 'text', 'from' => $prev_row['model'] ?? '', 'to' => $model ),
+                        array( 'key' => 'expiry_date', 'label' => 'תאריך תפוגה', 'type' => 'date', 'from' => $prev_row['expiry_date'] ?? '', 'to' => $expiry ),
+                        array( 'key' => 'access_url', 'label' => 'כתובת גישה', 'type' => 'text', 'from' => $prev_row['access_url'] ?? '', 'to' => $access_url ),
+                        array( 'key' => 'notes', 'label' => 'הערה קבועה', 'type' => 'text', 'from' => $prev_row['notes'] ?? '', 'to' => $notes ),
+                        array( 'key' => 'temp_notice_enabled', 'label' => 'הודעה זמנית פעילה', 'type' => 'bool', 'from' => $prev_row['temp_notice_enabled'] ?? 0, 'to' => $temp_enabled ),
+                        array( 'key' => 'temp_notice', 'label' => 'הודעה זמנית', 'type' => 'text', 'from' => $prev_row['temp_notice'] ?? '', 'to' => $temp_notice ),
+                    );
+
+                    foreach ( $fields as $field ) {
+                        $from = $this->format_log_value( $field['from'], $field['type'] );
+                        $to   = $this->format_log_value( $field['to'], $field['type'] );
+                        if ( $from !== $to ) {
+                            $changes[] = array(
+                                'field' => $field['label'],
+                                'from'  => $from,
+                                'to'    => $to,
+                            );
+                        }
+                    }
+                }
+
+                $this->log_firewall_event( $id, 'update', 'עודכן רישום חומת אש', array( 'changes' => $changes ) );
             }
         } else {
             $data['created_at'] = current_time( 'mysql' );
@@ -566,6 +679,7 @@ if ( $id > 0 ) {
         $secret_new  = isset( $_POST['forticloud_api_secret'] ) ? trim( (string) wp_unslash( $_POST['forticloud_api_secret'] ) ) : '';
 
         $forti_settings = $this->get_forticloud_settings();
+        $prev_settings  = $forti_settings;
         $forti_settings['api_id']    = $api_id;
         $forti_settings['client_id'] = $client_id !== '' ? $client_id : 'assetmanagement';
 
@@ -580,9 +694,31 @@ if ( $id > 0 ) {
 
         $this->update_forticloud_settings( $forti_settings );
         $this->add_notice( 'הגדרות FortiCloud נשמרו.' );
+        $changes = array();
+        $settings_fields = array(
+            array( 'label' => 'FortiCloud API ID', 'from' => $prev_settings['api_id'] ?? '', 'to' => $forti_settings['api_id'] ?? '' ),
+            array( 'label' => 'Client ID', 'from' => $prev_settings['client_id'] ?? '', 'to' => $forti_settings['client_id'] ?? '' ),
+            array( 'label' => 'Base URL', 'from' => $prev_settings['base_url'] ?? '', 'to' => $forti_settings['base_url'] ?? '' ),
+        );
+        foreach ( $settings_fields as $field ) {
+            if ( (string) $field['from'] !== (string) $field['to'] ) {
+                $changes[] = array(
+                    'field' => $field['label'],
+                    'from'  => (string) $field['from'],
+                    'to'    => (string) $field['to'],
+                );
+            }
+        }
+        if ( $secret_new !== '' ) {
+            $changes[] = array(
+                'field' => 'API Secret',
+                'from'  => '***',
+                'to'    => 'עודכן',
+            );
+        }
+
         $this->log_firewall_event( null, 'forticloud_settings', 'הגדרות FortiCloud נשמרו', array(
-            'base_url'   => $forti_settings['base_url'] ?? '',
-            'client_id'  => $forti_settings['client_id'] ?? '',
+            'changes' => $changes,
         ), 'info' );
     }
 
@@ -1465,13 +1601,28 @@ if ( $id > 0 ) {
         delete_transient( 'expman_firewalls_errors' );
 
         echo '<style>/* expman-compact-fields */
-.expman-filter-row input,.expman-filter-row select{height:20px !important;padding:2px 6px !important;font-size:12px !important;}
+.expman-filter-row input,.expman-filter-row select{height:24px !important;padding:4px 6px !important;font-size:12px !important;border:1px solid #c7d1e0;border-radius:4px;background:#fff;}
+.expman-filter-row th{background:#e8f0fb !important;border-bottom:2px solid #c7d1e0;}
 .fw-form input,.fw-form select{height:24px !important;padding:3px 6px !important;font-size:13px !important;}
 .fw-form textarea{min-height:60px !important;font-size:13px !important;}
-.expman-btn{padding:6px 10px !important;font-size:12px !important;}
+.expman-btn{padding:6px 12px !important;font-size:12px !important;border-radius:6px;border:1px solid #254d8c;background:#2f5ea8;color:#fff;display:inline-block;line-height:1.2;box-shadow:0 1px 0 rgba(0,0,0,0.05);cursor:pointer;text-decoration:none;}
+.expman-btn:hover{background:#264f8f;color:#fff;}
+.expman-btn.secondary{background:#eef3fb;border-color:#9fb3d9;color:#1f3b64;}
+.expman-btn.secondary:hover{background:#dfe9f7;color:#1f3b64;}
 .expman-btn-clear{background:transparent;border:0;box-shadow:none;padding:0 !important;color:#2271b1;cursor:pointer;}
 .expman-btn-clear:hover{text-decoration:underline;}
 .expman-highlight{background:#fff7c0 !important;}
+.expman-frontend .widefat{border:1px solid #c7d1e0;border-radius:8px;overflow:hidden;background:#fff;}
+.expman-frontend .widefat thead th{background:#2f5ea8;color:#fff;border-bottom:2px solid #244b86;padding:8px;}
+.expman-frontend .widefat thead th a{color:#fff;}
+.expman-frontend .widefat tbody td{padding:8px;border-bottom:1px solid #e3e7ef;}
+.expman-row-alt td{background:#f6f8fc;}
+.expman-inline-form td{border-top:1px solid #e3e7ef;}
+.expman-details td{border-top:1px solid #e3e7ef;background:#f4f6fb;}
+.expman-frontend .button,.expman-frontend .button.button-primary{border-radius:6px;border:1px solid #254d8c;background:#2f5ea8;color:#fff;box-shadow:0 1px 0 rgba(0,0,0,0.05);padding:6px 12px;height:auto;}
+.expman-frontend .button:not(.button-primary){background:#eef3fb;border-color:#9fb3d9;color:#1f3b64;}
+.expman-frontend .button:hover,.expman-frontend .button.button-primary:hover{background:#264f8f;color:#fff;}
+.expman-frontend .button:not(.button-primary):hover{background:#dfe9f7;color:#1f3b64;}
 </style>';
 echo '<style>.expman-frontend.expman-firewalls input,.expman-frontend.expman-firewalls select{height:28px!important;line-height:28px!important;padding:2px 6px!important;font-size:13px!important}.expman-frontend.expman-firewalls textarea{min-height:60px!important;font-size:13px!important;padding:6px!important}.expman-frontend.expman-firewalls .button{padding:4px 10px!important;height:30px!important}</style>';
         echo '<div class="expman-frontend expman-firewalls" style="direction:rtl;">';
@@ -1794,7 +1945,8 @@ echo '<style>.expman-frontend.expman-firewalls input,.expman-frontend.expman-fir
     private function render_logs_tab() {
         global $wpdb;
         $logs_table = $wpdb->prefix . self::TABLE_FIREWALL_LOGS;
-        $logs = $wpdb->get_results( "SELECT * FROM {$logs_table} ORDER BY id DESC LIMIT 200" );
+        $fw_table = $wpdb->prefix . self::TABLE_FIREWALLS;
+        $logs = $wpdb->get_results( "SELECT l.*, fw.customer_name, fw.serial_number FROM {$logs_table} l LEFT JOIN {$fw_table} fw ON fw.id = l.firewall_id ORDER BY l.id DESC LIMIT 200" );
 
         echo '<h3>לוגים (חומות אש)</h3>';
         echo '<p style="color:#555;">מציג 200 רשומות אחרונות של יצירה, עדכון, מחיקה וסנכרון.</p>';
@@ -1809,21 +1961,24 @@ echo '<style>.expman-frontend.expman-firewalls input,.expman-frontend.expman-fir
         echo '<th>זמן</th>';
         echo '<th>פעולה</th>';
         echo '<th>רמה</th>';
-        echo '<th>ID חומת אש</th>';
+        echo '<th>שם לקוח</th>';
+        echo '<th>מספר סידורי</th>';
         echo '<th>הודעה</th>';
         echo '<th>פרטים</th>';
         echo '</tr></thead><tbody>';
 
         foreach ( $logs as $log ) {
-            $context = '';
-            if ( ! empty( $log->context ) ) {
-                $context = '<pre style="white-space:pre-wrap;margin:0;">' . esc_html( $log->context ) . '</pre>';
+            $context = $this->format_log_context( $log->context ?? '' );
+            $created_at = '';
+            if ( ! empty( $log->created_at ) ) {
+                $created_at = date_i18n( 'd/m/Y H:i', strtotime( $log->created_at ) );
             }
             echo '<tr>';
-            echo '<td>' . esc_html( $log->created_at ) . '</td>';
+            echo '<td>' . esc_html( $created_at ) . '</td>';
             echo '<td>' . esc_html( $log->action ) . '</td>';
             echo '<td>' . esc_html( $log->level ) . '</td>';
-            echo '<td>' . esc_html( $log->firewall_id ) . '</td>';
+            echo '<td>' . esc_html( $log->customer_name ?? '' ) . '</td>';
+            echo '<td>' . esc_html( $log->serial_number ?? '' ) . '</td>';
             echo '<td>' . esc_html( $log->message ) . '</td>';
             echo '<td>' . $context . '</td>';
             echo '</tr>';
@@ -1992,7 +2147,9 @@ echo '<style>.expman-frontend.expman-firewalls input,.expman-frontend.expman-fir
             return;
         }
 
+        $row_index = 0;
         foreach ( (array) $rows as $r ) {
+            $row_index++;
             $days = is_null( $r->days_to_renew ) ? '' : intval( $r->days_to_renew );
 
             $access_btn = '';
@@ -2008,7 +2165,8 @@ echo '<style>.expman-frontend.expman-firewalls input,.expman-frontend.expman-fir
             if ( ! empty( $_GET['highlight'] ) && (string) $r->serial_number === (string) sanitize_text_field( wp_unslash( $_GET['highlight'] ) ) ) {
                 $highlight = ' expman-highlight';
             }
-            echo '<tr class="expman-row' . esc_attr( $highlight ) . '" style="cursor:pointer;">';
+            $alt_class = ( $row_index % 2 === 0 ) ? ' expman-row-alt' : '';
+            echo '<tr class="expman-row' . esc_attr( $highlight . $alt_class ) . '" style="cursor:pointer;">';
                         echo '<td>' . esc_html( $r->customer_number ?? '' ) . '</td>';
             echo '<td>' . esc_html( $r->customer_name ?? '' ) . '</td>';
             echo '<td>' . esc_html( $r->branch ?? '' ) . '</td>';
