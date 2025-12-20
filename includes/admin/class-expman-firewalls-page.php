@@ -459,6 +459,8 @@ dbDelta( $sql_types );
             exit;
         }
 
+        $redirect_tab = sanitize_key( $_POST['tab'] ?? '' );
+
         switch ( $action ) {
             case 'save_firewall':
                 $this->action_save_firewall();
@@ -486,10 +488,18 @@ dbDelta( $sql_types );
                 break;
             case 'import_csv':
                 $this->action_import_csv();
+                $redirect_tab = 'bulk';
+                break;
+            case 'save_box_types':
+                $this->action_save_box_types();
                 break;
         }
 
-        wp_safe_redirect( remove_query_arg( array( 'expman_msg' ) ) );
+        $redirect_url = remove_query_arg( array( 'expman_msg' ) );
+        if ( $redirect_tab !== '' ) {
+            $redirect_url = add_query_arg( 'tab', $redirect_tab, $redirect_url );
+        }
+        wp_safe_redirect( $redirect_url );
         exit;
     }
 
@@ -731,6 +741,76 @@ if ( $id > 0 ) {
         $this->log_firewall_event( null, 'forticloud_settings', 'הגדרות FortiCloud נשמרו', array(
             'changes' => $changes,
         ), 'info' );
+    }
+
+    private function action_save_box_types() {
+        global $wpdb;
+        $types_table = $wpdb->prefix . self::TABLE_TYPES;
+
+        $vendors = $_POST['box_type_vendor'] ?? array();
+        $models  = $_POST['box_type_model'] ?? array();
+        $delete  = $_POST['box_type_delete'] ?? array();
+
+        foreach ( (array) $vendors as $id => $vendor ) {
+            if ( ! is_numeric( $id ) ) {
+                continue;
+            }
+            $vendor = sanitize_text_field( $vendor );
+            $model  = sanitize_text_field( $models[ $id ] ?? '' );
+            $should_delete = isset( $delete[ $id ] );
+
+            if ( $should_delete ) {
+                $wpdb->delete( $types_table, array( 'id' => intval( $id ) ), array( '%d' ) );
+                continue;
+            }
+
+            if ( $vendor === '' && $model === '' ) {
+                continue;
+            }
+
+            if ( $vendor !== '' && $model !== '' ) {
+                $wpdb->update(
+                    $types_table,
+                    array(
+                        'vendor'     => $vendor,
+                        'model'      => $model,
+                        'updated_at' => current_time( 'mysql' ),
+                    ),
+                    array( 'id' => intval( $id ) ),
+                    array( '%s', '%s', '%s' ),
+                    array( '%d' )
+                );
+            }
+        }
+
+        $new_vendors = $_POST['new_box_type_vendor'] ?? array();
+        $new_models  = $_POST['new_box_type_model'] ?? array();
+
+        foreach ( (array) $new_vendors as $idx => $vendor ) {
+            $vendor = sanitize_text_field( $vendor );
+            $model  = sanitize_text_field( $new_models[ $idx ] ?? '' );
+            if ( $vendor === '' || $model === '' ) {
+                continue;
+            }
+            $exists = $wpdb->get_var( $wpdb->prepare(
+                "SELECT id FROM {$types_table} WHERE vendor=%s AND model=%s",
+                $vendor,
+                $model
+            ) );
+            if ( $exists ) {
+                continue;
+            }
+            $wpdb->insert(
+                $types_table,
+                array(
+                    'vendor'     => $vendor,
+                    'model'      => $model,
+                    'created_at' => current_time( 'mysql' ),
+                    'updated_at' => current_time( 'mysql' ),
+                ),
+                array( '%s', '%s', '%s', '%s' )
+            );
+        }
     }
 
 
@@ -1104,10 +1184,12 @@ if ( $id > 0 ) {
         " );
 
         $filename = 'firewalls-template-' . date( 'Ymd-His' ) . '.csv';
-        header( 'Content-Type: text/csv; charset=utf-8' );
+        header( 'Content-Type: text/csv; charset=UTF-8' );
+        header( 'Content-Encoding: UTF-8' );
         header( 'Content-Disposition: attachment; filename=' . $filename );
 
         $out = fopen( 'php://output', 'w' );
+        fputs( $out, "\xEF\xBB\xBF" );
 
         fputcsv( $out, array(
             'id',
@@ -1177,6 +1259,10 @@ if ( $id > 0 ) {
 
         while ( ( $data = fgetcsv( $h, 0, ',' ) ) !== false ) {
             $row_num++;
+
+            if ( isset( $data[0] ) ) {
+                $data[0] = preg_replace( '/^\xEF\xBB\xBF/', '', (string) $data[0] );
+            }
 
             if ( $row_num === 1 && isset( $data[0] ) && strtolower( trim( (string) $data[0] ) ) === 'id' ) {
                 continue;
@@ -1957,6 +2043,7 @@ echo '<style>.expman-frontend.expman-firewalls input,.expman-frontend.expman-fir
         echo '<form method="post" enctype="multipart/form-data" style="margin:0;">';
         wp_nonce_field( 'expman_firewalls' );
         echo '<input type="hidden" name="expman_action" value="import_csv">';
+        echo '<input type="hidden" name="tab" value="bulk">';
         echo '<input type="file" name="firewalls_file" accept=".csv" required>';
         echo '<button class="expman-btn secondary" type="submit">ייבוא מ-Excel (CSV)</button>';
         echo '</form>';
@@ -2002,20 +2089,33 @@ echo '<style>.expman-frontend.expman-firewalls input,.expman-frontend.expman-fir
 
         echo '<table class="widefat striped">';
         echo '<thead><tr>';
-        echo '<th>Serial</th>';
-        echo '<th>קטגוריה</th>';
-        echo '<th>דגם</th>';
-        echo '<th>תפוגה</th>';
+        echo '<th>מספר סידורי</th>';
+        echo '<th>שם לקוח</th>';
+        echo '<th>סניף</th>';
         echo '<th>תיאור</th>';
         echo '<th>שייך ללקוח</th>';
         echo '</tr></thead><tbody>';
 
         foreach ( $assets as $asset ) {
             echo '<tr>';
+            $customer_label_parts = array();
+            if ( ! empty( $asset->customer_number_snapshot ) ) {
+                $customer_label_parts[] = $asset->customer_number_snapshot;
+            }
+            if ( ! empty( $asset->customer_name_snapshot ) ) {
+                $customer_label_parts[] = $asset->customer_name_snapshot;
+            }
+            $customer_label = trim( implode( ' - ', $customer_label_parts ) );
+            $branch_label = '';
+            if ( ! empty( $asset->asset_groups ) ) {
+                $branch_label = $asset->asset_groups;
+            } elseif ( ! empty( $asset->folder_id ) ) {
+                $branch_label = $asset->folder_id;
+            }
+
             echo '<td>' . esc_html( $asset->serial_number ) . '</td>';
-            echo '<td>' . esc_html( $asset->category_name ) . '</td>';
-            echo '<td>' . esc_html( $asset->model_name ) . '</td>';
-            echo '<td>' . esc_html( $asset->expiration_date ) . '</td>';
+            echo '<td>' . esc_html( $customer_label ) . '</td>';
+            echo '<td>' . esc_html( $branch_label ) . '</td>';
             echo '<td>' . esc_html( $asset->description ) . '</td>';
             echo '<td class="expman-customer-cell">';
             echo '<form method="post" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:0;">';
@@ -2120,6 +2220,37 @@ echo '<style>.expman-frontend.expman-firewalls input,.expman-frontend.expman-fir
         echo '</form>';
 
         echo '<script>(function(){var btn=document.getElementById("expman-toggle-secret");var wrap=document.getElementById("expman-secret-wrap");if(btn&&wrap){btn.addEventListener("click",function(){wrap.style.display=wrap.style.display==="none"?"block":"none";});}})();</script>';
+
+        $types = $this->get_box_types();
+        echo '<hr style="margin:24px 0;">';
+        echo '<h3>טבלת יצרן ודגם</h3>';
+        echo '<form method="post" style="max-width:680px;">';
+        wp_nonce_field( 'expman_firewalls' );
+        echo '<input type="hidden" name="expman_action" value="save_box_types">';
+        echo '<input type="hidden" name="tab" value="settings">';
+        echo '<table class="widefat striped" style="margin-top:10px;">';
+        echo '<thead><tr><th>יצרן</th><th>דגם</th><th>מחיקה</th></tr></thead><tbody>';
+
+        if ( empty( $types ) ) {
+            echo '<tr><td colspan="3" style="color:#666;">אין רשומות בטבלה.</td></tr>';
+        } else {
+            foreach ( $types as $type ) {
+                echo '<tr>';
+                echo '<td><input type="text" name="box_type_vendor[' . esc_attr( $type->id ) . ']" value="' . esc_attr( $type->vendor ) . '" style="width:100%;"></td>';
+                echo '<td><input type="text" name="box_type_model[' . esc_attr( $type->id ) . ']" value="' . esc_attr( $type->model ) . '" style="width:100%;"></td>';
+                echo '<td style="text-align:center;"><input type="checkbox" name="box_type_delete[' . esc_attr( $type->id ) . ']" value="1"></td>';
+                echo '</tr>';
+            }
+        }
+
+        echo '<tr>';
+        echo '<td><input type="text" name="new_box_type_vendor[]" placeholder="יצרן חדש" style="width:100%;"></td>';
+        echo '<td><input type="text" name="new_box_type_model[]" placeholder="דגם חדש" style="width:100%;"></td>';
+        echo '<td></td>';
+        echo '</tr>';
+        echo '</tbody></table>';
+        echo '<p style="margin-top:10px;"><button type="submit" class="button button-primary">שמירה</button></p>';
+        echo '</form>';
     }
 
     private function render_trash_tab() {
@@ -2229,6 +2360,7 @@ echo '<style>.expman-frontend.expman-firewalls input,.expman-frontend.expman-fir
         $vendor_sel  = array_filter( array_map( 'trim', explode( ',', (string) ( $filters['vendor'] ?? '' ) ) ) );
         $model_sel   = array_filter( array_map( 'trim', explode( ',', (string) ( $filters['model'] ?? '' ) ) ) );
 
+        $ms_script = '';
         if ( $show_filters ) {
             echo '<div id="expman-ms-data-' . esc_attr( $uid ) . '" style="display:none"'
                 . ' data-vendor-options="' . esc_attr( wp_json_encode( $vendor_opts ) ) . '"'
@@ -2237,11 +2369,12 @@ echo '<style>.expman-frontend.expman-firewalls input,.expman-frontend.expman-fir
                 . ' data-model-selected="'  . esc_attr( wp_json_encode( array_values( $model_sel ) ) )  . '"'
                 . '></div>';
 
-            echo '<script>
+            $ms_script = '<script>
             (function(){
-              const dataEl = document.currentScript.previousElementSibling;
+              const dataEl = document.getElementById("expman-ms-data-' . esc_js( $uid ) . '");
+              if(!dataEl){return;}
               const wrap = dataEl.closest(".expman-table-wrap");
-              function get(key){try{return JSON.parse(document.getElementById("expman-ms-data-' . esc_js( $uid ) . '").dataset[key]||"[]")}catch(e){return []}}
+              function get(key){try{return JSON.parse(dataEl.dataset[key]||"[]")}catch(e){return []}}
               const optsVendor=get("vendorOptions"), optsModel=get("modelOptions");
               const selVendor=new Set(get("vendorSelected")), selModel=new Set(get("modelSelected"));
 
@@ -2475,6 +2608,9 @@ echo '<style>.expman-frontend.expman-firewalls input,.expman-frontend.expman-fir
         echo '</tbody></table>';
         if ( $show_filters ) {
             echo '</form>';
+        }
+        if ( $ms_script !== '' ) {
+            echo $ms_script;
         }
         echo '</div>';
 
