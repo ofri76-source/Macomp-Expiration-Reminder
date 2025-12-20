@@ -425,9 +425,15 @@ class Expman_Firewalls_Actions {
             array( '%s' ),
             array( '%d' )
         );
-        $this->logger->log_firewall_event( $id, 'delete', 'רישום הועבר לסל המחזור' );
         if ( $ok === false ) {
-            $this->logger->log_firewall_event( $id, 'delete', 'עדכון מחיקה נכשל', array( 'error' => $wpdb->last_error ), 'error' );
+            $this->logger->log_firewall_event( $id, 'delete_failed', 'מחיקה נכשלה', array(
+                'error'          => $wpdb->last_error,
+                'query'          => $wpdb->last_query,
+                'table'          => $fw_table,
+                'has_deleted_at' => $this->column_exists( $fw_table, 'deleted_at' ),
+            ), 'error' );
+        } else {
+            $this->logger->log_firewall_event( $id, 'delete', 'רישום הועבר לסל המחזור' );
         }
     }
 
@@ -444,9 +450,15 @@ class Expman_Firewalls_Actions {
             array( '%s' ),
             array( '%d' )
         );
-        $this->logger->log_firewall_event( $id, 'restore', 'רישום שוחזר מסל המחזור' );
         if ( $ok === false ) {
-            $this->logger->log_firewall_event( $id, 'restore', 'שחזור מסל המחזור נכשל', array( 'error' => $wpdb->last_error ), 'error' );
+            $this->logger->log_firewall_event( $id, 'restore_failed', 'שחזור מסל המחזור נכשל', array(
+                'error'          => $wpdb->last_error,
+                'query'          => $wpdb->last_query,
+                'table'          => $fw_table,
+                'has_deleted_at' => $this->column_exists( $fw_table, 'deleted_at' ),
+            ), 'error' );
+        } else {
+            $this->logger->log_firewall_event( $id, 'restore', 'רישום שוחזר מסל המחזור' );
         }
     }
 

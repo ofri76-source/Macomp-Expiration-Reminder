@@ -483,13 +483,10 @@ class Expman_Firewalls_UI {
         echo '<th>סניף</th>';
         echo '<th>ניהול</th>';
         echo '<th>מעקב</th>';
-        echo '<th>יצרן</th>';
         echo '<th>דגם</th>';
         echo '<th>תפוגה</th>';
         echo '<th>גישה</th>';
         echo '<th>הערות</th>';
-        echo '<th>הודעה זמנית</th>';
-        echo '<th>טקסט הודעה זמנית</th>';
         echo '<th>פעולה</th>';
         echo '</tr></thead><tbody>';
 
@@ -513,16 +510,10 @@ class Expman_Firewalls_UI {
             echo '<option value="0" ' . selected( $row->track_only, 0, false ) . '>לא</option>';
             echo '<option value="1" ' . selected( $row->track_only, 1, false ) . '>כן</option>';
             echo '</select></td>';
-            echo '<td><input type="text" name="vendor" value="' . esc_attr( $row->vendor ?? '' ) . '" form="expman-stage-' . esc_attr( $row->id ) . '"></td>';
             echo '<td><input type="text" name="model" value="' . esc_attr( $row->model ?? '' ) . '" form="expman-stage-' . esc_attr( $row->id ) . '"></td>';
             echo '<td><input type="date" name="expiry_date" value="' . esc_attr( $row->expiry_date ?? '' ) . '" form="expman-stage-' . esc_attr( $row->id ) . '"></td>';
             echo '<td><input type="text" name="access_url" value="' . esc_attr( $row->access_url ?? '' ) . '" form="expman-stage-' . esc_attr( $row->id ) . '"></td>';
             echo '<td><textarea name="notes" rows="2" form="expman-stage-' . esc_attr( $row->id ) . '">' . esc_textarea( $row->notes ?? '' ) . '</textarea></td>';
-            echo '<td><select name="temp_notice_enabled" form="expman-stage-' . esc_attr( $row->id ) . '">';
-            echo '<option value="0" ' . selected( $row->temp_notice_enabled ?? 0, 0, false ) . '>לא</option>';
-            echo '<option value="1" ' . selected( $row->temp_notice_enabled ?? 0, 1, false ) . '>כן</option>';
-            echo '</select></td>';
-            echo '<td><textarea name="temp_notice" rows="2" form="expman-stage-' . esc_attr( $row->id ) . '">' . esc_textarea( $row->temp_notice ?? '' ) . '</textarea></td>';
             echo '<td>';
             echo '<form method="post" id="expman-stage-' . esc_attr( $row->id ) . '">';
             wp_nonce_field( 'expman_firewalls' );
@@ -931,7 +922,15 @@ class Expman_Firewalls_UI {
         $row_index = 0;
         foreach ( (array) $rows as $r ) {
             $row_index++;
-            $days = is_null( $r->days_to_renew ) ? '' : intval( $r->days_to_renew );
+            if ( ! is_null( $r->days_to_renew ) ) {
+                $days = intval( $r->days_to_renew );
+            } elseif ( ! empty( $r->expiry_date ) ) {
+                $today = new DateTimeImmutable( 'today' );
+                $expiry = new DateTimeImmutable( $r->expiry_date );
+                $days = (int) $today->diff( $expiry )->format( '%r%a' );
+            } else {
+                $days = '';
+            }
 
             $access_btn = '';
             if ( ! empty( $r->access_url ) ) {
@@ -1021,10 +1020,11 @@ class Expman_Firewalls_UI {
         echo '</div>';
 
         echo '<script>(function(){
-          const dataEl = document.currentScript.previousElementSibling;';
-        echo 'document.querySelectorAll("tr.expman-row").forEach(function(tr){tr.addEventListener("click",function(){';
+          const wrap = document.currentScript.previousElementSibling;
+          if(!wrap){return;}';
+        echo 'wrap.querySelectorAll("tr.expman-row").forEach(function(tr){tr.addEventListener("click",function(){';
         echo 'var id=tr.querySelector("a.expman-edit-btn")?tr.querySelector("a.expman-edit-btn").getAttribute("data-id"):null;';
-        echo 'if(!id) return; var d=document.querySelector("tr.expman-details[data-for=\'"+id+"\']"); if(!d) return;';
+        echo 'if(!id) return; var d=wrap.querySelector("tr.expman-details[data-for=\'"+id+"\']"); if(!d) return;';
         echo 'd.style.display=(d.style.display==="none"||d.style.display==="")?"table-row":"none";';
         echo '});});';
         echo '})();</script>';
