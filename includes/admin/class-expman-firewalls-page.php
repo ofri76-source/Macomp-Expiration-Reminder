@@ -205,7 +205,7 @@ dbDelta( $sql_types );
     private $version;
     private $notices = array();
 
-    private function __construct( $option_key, $version ) {
+    public function __construct( $option_key, $version ) {
         $this->option_key = $option_key;
         $this->version    = $version;
     }
@@ -459,6 +459,8 @@ dbDelta( $sql_types );
             exit;
         }
 
+        $redirect_tab = sanitize_key( $_POST['tab'] ?? '' );
+
         switch ( $action ) {
             case 'save_firewall':
                 $this->action_save_firewall();
@@ -486,10 +488,18 @@ dbDelta( $sql_types );
                 break;
             case 'import_csv':
                 $this->action_import_csv();
+                $redirect_tab = 'bulk';
+                break;
+            case 'save_box_types':
+                $this->action_save_box_types();
                 break;
         }
 
-        wp_safe_redirect( remove_query_arg( array( 'expman_msg' ) ) );
+        $redirect_url = remove_query_arg( array( 'expman_msg' ) );
+        if ( $redirect_tab !== '' ) {
+            $redirect_url = add_query_arg( 'tab', $redirect_tab, $redirect_url );
+        }
+        wp_safe_redirect( $redirect_url );
         exit;
     }
 
@@ -733,6 +743,76 @@ if ( $id > 0 ) {
         ), 'info' );
     }
 
+    private function action_save_box_types() {
+        global $wpdb;
+        $types_table = $wpdb->prefix . self::TABLE_TYPES;
+
+        $vendors = $_POST['box_type_vendor'] ?? array();
+        $models  = $_POST['box_type_model'] ?? array();
+        $delete  = $_POST['box_type_delete'] ?? array();
+
+        foreach ( (array) $vendors as $id => $vendor ) {
+            if ( ! is_numeric( $id ) ) {
+                continue;
+            }
+            $vendor = sanitize_text_field( $vendor );
+            $model  = sanitize_text_field( $models[ $id ] ?? '' );
+            $should_delete = isset( $delete[ $id ] );
+
+            if ( $should_delete ) {
+                $wpdb->delete( $types_table, array( 'id' => intval( $id ) ), array( '%d' ) );
+                continue;
+            }
+
+            if ( $vendor === '' && $model === '' ) {
+                continue;
+            }
+
+            if ( $vendor !== '' && $model !== '' ) {
+                $wpdb->update(
+                    $types_table,
+                    array(
+                        'vendor'     => $vendor,
+                        'model'      => $model,
+                        'updated_at' => current_time( 'mysql' ),
+                    ),
+                    array( 'id' => intval( $id ) ),
+                    array( '%s', '%s', '%s' ),
+                    array( '%d' )
+                );
+            }
+        }
+
+        $new_vendors = $_POST['new_box_type_vendor'] ?? array();
+        $new_models  = $_POST['new_box_type_model'] ?? array();
+
+        foreach ( (array) $new_vendors as $idx => $vendor ) {
+            $vendor = sanitize_text_field( $vendor );
+            $model  = sanitize_text_field( $new_models[ $idx ] ?? '' );
+            if ( $vendor === '' || $model === '' ) {
+                continue;
+            }
+            $exists = $wpdb->get_var( $wpdb->prepare(
+                "SELECT id FROM {$types_table} WHERE vendor=%s AND model=%s",
+                $vendor,
+                $model
+            ) );
+            if ( $exists ) {
+                continue;
+            }
+            $wpdb->insert(
+                $types_table,
+                array(
+                    'vendor'     => $vendor,
+                    'model'      => $model,
+                    'created_at' => current_time( 'mysql' ),
+                    'updated_at' => current_time( 'mysql' ),
+                ),
+                array( '%s', '%s', '%s', '%s' )
+            );
+        }
+    }
+
 
     private function action_sync_forticloud_assets() {
         $settings  = $this->get_forticloud_settings();
@@ -952,6 +1032,9 @@ if ( $id > 0 ) {
         );
 
         $vendor = sanitize_text_field( $asset->category_name ?? '' );
+        if ( $vendor === '' ) {
+            $vendor = 'FortiGate';
+        }
         $model  = sanitize_text_field( $asset->model_name ?? '' );
         $box_type_id = null;
         if ( $vendor !== '' && $model !== '' ) {
@@ -988,6 +1071,7 @@ if ( $id > 0 ) {
             'track_only'      => 0,
             'box_type_id'     => $box_type_id,
             'expiry_date'     => $expiry_date !== '' ? $expiry_date : null,
+            'notes'           => $asset->description ?? null,
             'updated_at'      => current_time( 'mysql' ),
         );
 
@@ -1085,6 +1169,12 @@ if ( $id > 0 ) {
         $types_table = $wpdb->prefix . self::TABLE_TYPES;
         $cust_table  = $wpdb->prefix . 'dc_customers';
 
+        while ( ob_get_level() > 0 ) {
+            ob_end_clean();
+        }
+
+        nocache_headers();
+
         $rows = $wpdb->get_results( "
             SELECT fw.*,
                    c.customer_number AS customer_number,
@@ -1098,10 +1188,12 @@ if ( $id > 0 ) {
         " );
 
         $filename = 'firewalls-template-' . date( 'Ymd-His' ) . '.csv';
-        header( 'Content-Type: text/csv; charset=utf-8' );
+        header( 'Content-Type: text/csv; charset=UTF-8' );
+        header( 'Content-Encoding: UTF-8' );
         header( 'Content-Disposition: attachment; filename=' . $filename );
 
         $out = fopen( 'php://output', 'w' );
+        fputs( $out, "\xEF\xBB\xBF" );
 
         fputcsv( $out, array(
             'id',
@@ -1114,6 +1206,7 @@ if ( $id > 0 ) {
             'vendor',
             'model',
             'expiry_date',
+            'registration_date',
             'access_url',
             'notes',
             'temp_notice_enabled',
@@ -1133,6 +1226,7 @@ if ( $id > 0 ) {
                 $r->vendor,
                 $r->model,
                 $r->expiry_date,
+                $r->created_at ? date( 'Y-m-d', strtotime( $r->created_at ) ) : '',
                 $r->access_url,
                 $r->notes,
                 $r->temp_notice_enabled,
@@ -1162,35 +1256,109 @@ if ( $id > 0 ) {
         $fw_table    = $wpdb->prefix . self::TABLE_FIREWALLS;
         $types_table = $wpdb->prefix . self::TABLE_TYPES;
         $cust_table  = $wpdb->prefix . 'dc_customers';
+        $assets_table = $wpdb->prefix . self::TABLE_FORTICLOUD_ASSETS;
 
         $row_num = 0;
         $imported = 0;
         $updated  = 0;
         $skipped  = 0;
         $errors   = array();
+        $header_map = array();
+        $import_mode = '';
 
         while ( ( $data = fgetcsv( $h, 0, ',' ) ) !== false ) {
             $row_num++;
 
-            if ( $row_num === 1 && isset( $data[0] ) && strtolower( trim( (string) $data[0] ) ) === 'id' ) {
+            if ( isset( $data[0] ) ) {
+                $data[0] = preg_replace( '/^\xEF\xBB\xBF/', '', (string) $data[0] );
+            }
+
+            if ( $row_num === 1 ) {
+                $header_map = $this->build_import_header_map( $data );
+                if ( ! empty( $header_map ) ) {
+                    if ( isset( $header_map['serial number'] ) || isset( $header_map['serial_number_forticloud'] ) ) {
+                        $import_mode = 'forticloud';
+                    } elseif ( isset( $header_map['serial_number'] ) ) {
+                        $import_mode = 'firewalls';
+                    }
+                    continue;
+                }
+            }
+
+            if ( $import_mode === 'forticloud' ) {
+                $serial = $this->get_import_value( $data, $header_map, array( 'serial number', 'serial_number_forticloud' ) );
+                $serial = trim( (string) $serial );
+                if ( $serial === '' ) {
+                    $skipped++;
+                    $errors[] = "שורה {$row_num}: חסר מספר סידורי.";
+                    continue;
+                }
+
+                $exists_fw = $wpdb->get_var( $wpdb->prepare( "SELECT id FROM {$fw_table} WHERE serial_number=%s LIMIT 1", $serial ) );
+                $exists_asset = $wpdb->get_var( $wpdb->prepare( "SELECT id FROM {$assets_table} WHERE serial_number=%s LIMIT 1", $serial ) );
+                if ( $exists_fw || $exists_asset ) {
+                    $skipped++;
+                    $errors[] = "שורה {$row_num}: מספר סידורי כבר קיים ({$serial}).";
+                    continue;
+                }
+
+                $vendor = 'FortiGate';
+                $model  = $this->get_import_value( $data, $header_map, array( 'product model', 'model', 'model_name' ) );
+                $desc   = $this->get_import_value( $data, $header_map, array( 'description' ) );
+                $expiry_raw = $this->get_import_value( $data, $header_map, array( 'unit expiration date', 'unit expiration da', 'expiration date', 'expiry date', 'expiry_date' ) );
+                $registration_raw = $this->get_import_value( $data, $header_map, array( 'registration date', 'registration da', 'registration_date' ) );
+
+                $expiry_date = $this->normalize_import_date( $expiry_raw );
+                $registration_date = $this->normalize_import_date( $registration_raw );
+
+                $ok = $wpdb->insert(
+                    $assets_table,
+                    array(
+                        'serial_number'     => $serial,
+                        'category_name'     => sanitize_text_field( $vendor ),
+                        'model_name'        => $model !== '' ? sanitize_text_field( $model ) : null,
+                        'expiration_date'   => $expiry_date,
+                        'registration_date' => $registration_date,
+                        'description'       => $desc !== '' ? sanitize_textarea_field( $desc ) : null,
+                        'created_at'        => current_time( 'mysql' ),
+                        'updated_at'        => current_time( 'mysql' ),
+                    ),
+                    array( '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s' )
+                );
+
+                if ( $ok === false ) {
+                    $skipped++;
+                    $errors[] = "שורה {$row_num}: הוספה נכשלה: " . $wpdb->last_error;
+                    continue;
+                }
+                $imported++;
                 continue;
             }
 
-            $col = array_pad( $data, 15, '' );
+            $legacy_offset = empty( $header_map ) && count( $data ) <= 15;
+            $col = array_pad( $data, 16, '' );
+            $id              = intval( trim( $this->get_import_value( $data, $header_map, array( 'id' ), $col[0] ) ) );
+            $customer_number = trim( (string) $this->get_import_value( $data, $header_map, array( 'customer_number' ), $col[1] ) );
+            $branch          = trim( (string) $this->get_import_value( $data, $header_map, array( 'branch' ), $col[3] ) );
+            $serial          = trim( (string) $this->get_import_value( $data, $header_map, array( 'serial_number' ), $col[4] ) );
+            $is_managed      = trim( (string) $this->get_import_value( $data, $header_map, array( 'is_managed' ), $col[5] ) ) === '0' ? 0 : 1;
+            $track_only      = trim( (string) $this->get_import_value( $data, $header_map, array( 'track_only' ), $col[6] ) ) === '1' ? 1 : 0;
+            $vendor          = trim( (string) $this->get_import_value( $data, $header_map, array( 'vendor' ), $col[7] ) );
+            $model           = trim( (string) $this->get_import_value( $data, $header_map, array( 'model' ), $col[8] ) );
+            $expiry_raw      = $this->get_import_value( $data, $header_map, array( 'expiry_date' ), $col[9] );
+            $registration_default = $legacy_offset ? '' : $col[10];
+            $access_default = $legacy_offset ? $col[10] : $col[11];
+            $notes_default = $legacy_offset ? $col[11] : $col[12];
+            $tmp_enabled_default = $legacy_offset ? $col[12] : $col[13];
+            $tmp_notice_default = $legacy_offset ? $col[13] : $col[14];
 
-            $id              = intval( trim( $col[0] ) );
-            $customer_number = trim( (string) $col[1] );
-            $branch          = trim( (string) $col[3] );
-            $serial          = trim( (string) $col[4] );
-            $is_managed      = trim( (string) $col[5] ) === '0' ? 0 : 1;
-            $track_only      = trim( (string) $col[6] ) === '1' ? 1 : 0;
-            $vendor          = trim( (string) $col[7] );
-            $model           = trim( (string) $col[8] );
-            $expiry          = trim( (string) $col[9] );
-            $access_url      = trim( (string) $col[10] );
-            $notes           = (string) $col[11];
-            $tmp_enabled     = trim( (string) $col[12] ) === '1' ? 1 : 0;
-            $tmp_notice      = (string) $col[13];
+            $registration_raw = $this->get_import_value( $data, $header_map, array( 'registration_date', 'created_at' ), $registration_default );
+            $access_url      = trim( (string) $this->get_import_value( $data, $header_map, array( 'access_url' ), $access_default ) );
+            $notes           = (string) $this->get_import_value( $data, $header_map, array( 'notes' ), $notes_default );
+            $tmp_enabled     = trim( (string) $this->get_import_value( $data, $header_map, array( 'temp_notice_enabled' ), $tmp_enabled_default ) ) === '1' ? 1 : 0;
+            $tmp_notice      = (string) $this->get_import_value( $data, $header_map, array( 'temp_notice' ), $tmp_notice_default );
+            $expiry          = $this->normalize_import_date( $expiry_raw );
+            $registration_date = $this->normalize_import_date( $registration_raw );
 
             if ( $serial === '' ) {
                 $skipped++;
@@ -1235,10 +1403,10 @@ if ( $id > 0 ) {
                 $access_url = 'https://' . ltrim( $access_url );
             }
 
-            // Unique serial check (excluding trashed)
+            // Unique serial check (skip existing rows entirely)
             $exists = $wpdb->get_var( $wpdb->prepare(
-                "SELECT id FROM {$fw_table} WHERE serial_number=%s AND deleted_at IS NULL AND archived_at IS NULL AND id != %d LIMIT 1",
-                $serial, $id
+                "SELECT id FROM {$fw_table} WHERE serial_number=%s LIMIT 1",
+                $serial
             ) );
             if ( $exists ) {
                 $skipped++;
@@ -1262,17 +1430,10 @@ if ( $id > 0 ) {
             );
 
             if ( $id > 0 ) {
-                $ok = $wpdb->update( $fw_table, $payload, array( 'id' => $id ) );
-                if ( $ok === false ) {
-                    $skipped++;
-                    $errors[] = "שורה {$row_num}: עדכון נכשל: " . $wpdb->last_error;
-                    $this->log_firewall_event( $id, 'import_update', 'עדכון נכשל בייבוא', array( 'error' => $wpdb->last_error ), 'error' );
-                    continue;
-                }
-                $updated++;
-                $this->log_firewall_event( $id, 'import_update', 'עודכן רישום בייבוא' );
+                $skipped++;
+                $errors[] = "שורה {$row_num}: רשומה קיימת (לא מעודכן).";
             } else {
-                $payload['created_at'] = current_time( 'mysql' );
+                $payload['created_at'] = $registration_date ? $registration_date : current_time( 'mysql' );
                 $ok = $wpdb->insert( $fw_table, $payload );
                 if ( $ok === false ) {
                     $skipped++;
@@ -1288,6 +1449,48 @@ if ( $id > 0 ) {
         fclose( $h );
         $summary = array( "ייבוא הסתיים. נוספו {$imported}, עודכנו {$updated}, דולגו {$skipped}." );
         set_transient( 'expman_firewalls_errors', array_merge( $summary, $errors ), 120 );
+    }
+
+    private function build_import_header_map( $row ) {
+        $map = array();
+        foreach ( (array) $row as $idx => $val ) {
+            $key = strtolower( trim( (string) $val ) );
+            if ( $key === '' ) {
+                continue;
+            }
+            $map[ $key ] = $idx;
+        }
+        if ( empty( $map ) ) {
+            return array();
+        }
+        if ( isset( $map['serial number'] ) ) {
+            $map['serial_number_forticloud'] = $map['serial number'];
+        }
+        return $map;
+    }
+
+    private function get_import_value( $row, $map, $keys, $fallback = '' ) {
+        foreach ( (array) $keys as $key ) {
+            if ( isset( $map[ $key ] ) ) {
+                return $row[ $map[ $key ] ] ?? '';
+            }
+        }
+        return $fallback;
+    }
+
+    private function normalize_import_date( $value ) {
+        $value = trim( (string) $value );
+        if ( $value === '' ) {
+            return null;
+        }
+        if ( preg_match( '/^\d{4}-\d{2}-\d{2}$/', $value ) ) {
+            return $value;
+        }
+        $ts = strtotime( $value );
+        if ( $ts ) {
+            return date( 'Y-m-d', $ts );
+        }
+        return null;
     }
 
     private function normalize_assets_payload( $payload ) {
@@ -1732,6 +1935,10 @@ if ( $id > 0 ) {
         echo '<style>/* expman-compact-fields */
 .expman-filter-row input,.expman-filter-row select{height:24px !important;padding:4px 6px !important;font-size:12px !important;border:1px solid #c7d1e0;border-radius:4px;background:#fff;}
 .expman-filter-row th{background:#e8f0fb !important;border-bottom:2px solid #c7d1e0;}
+.expman-align-left{text-align:left !important;}
+.expman-align-left input,
+.expman-align-left select,
+.expman-align-left button{direction:ltr;text-align:left !important;}
 .fw-form input,.fw-form select{height:24px !important;padding:3px 6px !important;font-size:13px !important;}
 .fw-form textarea{min-height:60px !important;font-size:13px !important;}
 .expman-btn{padding:6px 12px !important;font-size:12px !important;border-radius:6px;border:1px solid #254d8c;background:#2f5ea8;color:#fff;display:inline-block;line-height:1.2;box-shadow:0 1px 0 rgba(0,0,0,0.05);cursor:pointer;text-decoration:none;}
@@ -1888,9 +2095,51 @@ echo '<style>.expman-frontend.expman-firewalls input,.expman-frontend.expman-fir
         $this->render_form( 0 );
         echo '</div>';
 
-        echo '<h3>רשימה ראשית</h3>';
-        $rows = $this->get_firewalls_rows( $filters, $orderby, $order, 'active', null );
-        $this->render_table( $rows, $filters, $orderby, $order, 'active', $clear_url );
+        $managed_filters = $filters;
+        $managed_filters['is_managed'] = '1';
+
+        echo '<h3>חומות אש בניהול</h3>';
+        $rows = $this->get_firewalls_rows( $managed_filters, $orderby, $order, 'active', 0 );
+        $this->render_table(
+            $rows,
+            $managed_filters,
+            $orderby,
+            $order,
+            'active',
+            $clear_url,
+            array(
+                'show_filters'        => true,
+                'show_status_cols'    => false,
+                'show_status_filters' => false,
+                'hidden_filters'      => array(
+                    'f_is_managed' => '1',
+                    'f_track_only' => '0',
+                ),
+            )
+        );
+
+        $tracking_filters = $filters;
+        $tracking_filters['is_managed'] = '';
+        $tracking_filters['track_only'] = '1';
+
+        echo '<h3 style="margin-top:18px;">חומות אש למעקב</h3>';
+        $rows = $this->get_firewalls_rows( $tracking_filters, $orderby, $order, 'active', 1 );
+        $this->render_table(
+            $rows,
+            $tracking_filters,
+            $orderby,
+            $order,
+            'active',
+            $clear_url,
+            array(
+                'show_filters'        => true,
+                'show_status_cols'    => false,
+                'show_status_filters' => false,
+                'hidden_filters'      => array(
+                    'f_track_only' => '1',
+                ),
+            )
+        );
 
         // Import/Export at bottom
         echo '<div style="margin-top:18px;border-top:1px solid #eee;padding-top:12px;">';
@@ -1905,6 +2154,7 @@ echo '<style>.expman-frontend.expman-firewalls input,.expman-frontend.expman-fir
         echo '<form method="post" enctype="multipart/form-data" style="margin:0;">';
         wp_nonce_field( 'expman_firewalls' );
         echo '<input type="hidden" name="expman_action" value="import_csv">';
+        echo '<input type="hidden" name="tab" value="bulk">';
         echo '<input type="file" name="firewalls_file" accept=".csv" required>';
         echo '<button class="expman-btn secondary" type="submit">ייבוא מ-Excel (CSV)</button>';
         echo '</form>';
@@ -1950,20 +2200,33 @@ echo '<style>.expman-frontend.expman-firewalls input,.expman-frontend.expman-fir
 
         echo '<table class="widefat striped">';
         echo '<thead><tr>';
-        echo '<th>Serial</th>';
-        echo '<th>קטגוריה</th>';
-        echo '<th>דגם</th>';
-        echo '<th>תפוגה</th>';
+        echo '<th>מספר סידורי</th>';
+        echo '<th>שם לקוח</th>';
+        echo '<th>סניף</th>';
         echo '<th>תיאור</th>';
         echo '<th>שייך ללקוח</th>';
         echo '</tr></thead><tbody>';
 
         foreach ( $assets as $asset ) {
             echo '<tr>';
+            $customer_label_parts = array();
+            if ( ! empty( $asset->customer_number_snapshot ) ) {
+                $customer_label_parts[] = $asset->customer_number_snapshot;
+            }
+            if ( ! empty( $asset->customer_name_snapshot ) ) {
+                $customer_label_parts[] = $asset->customer_name_snapshot;
+            }
+            $customer_label = trim( implode( ' - ', $customer_label_parts ) );
+            $branch_label = '';
+            if ( ! empty( $asset->asset_groups ) ) {
+                $branch_label = $asset->asset_groups;
+            } elseif ( ! empty( $asset->folder_id ) ) {
+                $branch_label = $asset->folder_id;
+            }
+
             echo '<td>' . esc_html( $asset->serial_number ) . '</td>';
-            echo '<td>' . esc_html( $asset->category_name ) . '</td>';
-            echo '<td>' . esc_html( $asset->model_name ) . '</td>';
-            echo '<td>' . esc_html( $asset->expiration_date ) . '</td>';
+            echo '<td>' . esc_html( $customer_label ) . '</td>';
+            echo '<td>' . esc_html( $branch_label ) . '</td>';
             echo '<td>' . esc_html( $asset->description ) . '</td>';
             echo '<td class="expman-customer-cell">';
             echo '<form method="post" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:0;">';
@@ -2068,6 +2331,37 @@ echo '<style>.expman-frontend.expman-firewalls input,.expman-frontend.expman-fir
         echo '</form>';
 
         echo '<script>(function(){var btn=document.getElementById("expman-toggle-secret");var wrap=document.getElementById("expman-secret-wrap");if(btn&&wrap){btn.addEventListener("click",function(){wrap.style.display=wrap.style.display==="none"?"block":"none";});}})();</script>';
+
+        $types = $this->get_box_types();
+        echo '<hr style="margin:24px 0;">';
+        echo '<h3>טבלת יצרן ודגם</h3>';
+        echo '<form method="post" style="max-width:680px;">';
+        wp_nonce_field( 'expman_firewalls' );
+        echo '<input type="hidden" name="expman_action" value="save_box_types">';
+        echo '<input type="hidden" name="tab" value="settings">';
+        echo '<table class="widefat striped" style="margin-top:10px;">';
+        echo '<thead><tr><th>יצרן</th><th>דגם</th><th>מחיקה</th></tr></thead><tbody>';
+
+        if ( empty( $types ) ) {
+            echo '<tr><td colspan="3" style="color:#666;">אין רשומות בטבלה.</td></tr>';
+        } else {
+            foreach ( $types as $type ) {
+                echo '<tr>';
+                echo '<td><input type="text" name="box_type_vendor[' . esc_attr( $type->id ) . ']" value="' . esc_attr( $type->vendor ) . '" style="width:100%;"></td>';
+                echo '<td><input type="text" name="box_type_model[' . esc_attr( $type->id ) . ']" value="' . esc_attr( $type->model ) . '" style="width:100%;"></td>';
+                echo '<td style="text-align:center;"><input type="checkbox" name="box_type_delete[' . esc_attr( $type->id ) . ']" value="1"></td>';
+                echo '</tr>';
+            }
+        }
+
+        echo '<tr>';
+        echo '<td><input type="text" name="new_box_type_vendor[]" placeholder="יצרן חדש" style="width:100%;"></td>';
+        echo '<td><input type="text" name="new_box_type_model[]" placeholder="דגם חדש" style="width:100%;"></td>';
+        echo '<td></td>';
+        echo '</tr>';
+        echo '</tbody></table>';
+        echo '<p style="margin-top:10px;"><button type="submit" class="button button-primary">שמירה</button></p>';
+        echo '</form>';
     }
 
     private function render_trash_tab() {
@@ -2087,7 +2381,11 @@ echo '<style>.expman-frontend.expman-firewalls input,.expman-frontend.expman-fir
 
         echo '<h3>ארכיון (חומות אש)</h3>';
         $rows = $this->get_firewalls_rows( $filters, $orderby, $order, 'archive', null );
-        $this->render_table( $rows, $filters, $orderby, $order, 'archive', null );
+        $base = remove_query_arg( array( 'expman_msg' ) );
+        $clear_url = remove_query_arg( array(
+            'f_customer_number','f_customer_name','f_branch','f_serial_number','f_is_managed','f_track_only','f_vendor','f_model','f_expiry_date','orderby','order','highlight'
+        ), $base );
+        $this->render_table( $rows, $filters, $orderby, $order, 'archive', $clear_url );
     }
 
     private function render_logs_tab() {
@@ -2145,11 +2443,25 @@ echo '<style>.expman-frontend.expman-firewalls input,.expman-frontend.expman-fir
         return $vals;
     }
 
-    private function render_table( $rows, $filters, $orderby, $order, $table_mode, $clear_url = null ) {
+    private function render_table( $rows, $filters, $orderby, $order, $table_mode, $clear_url = null, $options = array() ) {
         $base = remove_query_arg( array( 'expman_msg' ) );
         $uid  = wp_generate_uuid4();
-        $show_filters = true;
+        $options = wp_parse_args(
+            $options,
+            array(
+                'show_filters'        => true,
+                'show_status_cols'    => true,
+                'show_status_filters' => true,
+                'hidden_filters'      => array(),
+            )
+        );
+        $show_filters = (bool) $options['show_filters'];
+        $show_status_cols = (bool) $options['show_status_cols'];
+        $show_status_filters = (bool) $options['show_status_filters'];
+        $hidden_filters = (array) $options['hidden_filters'];
+        $skip_keys = array_fill_keys( array_keys( $hidden_filters ), true );
 
+        echo '<div class="expman-table-wrap" data-expman-table="' . esc_attr( $uid ) . '">';
         if ( $show_filters ) {
             echo '<form method="get" style="margin:0 0 10px 0;">';
         }
@@ -2159,6 +2471,7 @@ echo '<style>.expman-frontend.expman-firewalls input,.expman-frontend.expman-fir
         $vendor_sel  = array_filter( array_map( 'trim', explode( ',', (string) ( $filters['vendor'] ?? '' ) ) ) );
         $model_sel   = array_filter( array_map( 'trim', explode( ',', (string) ( $filters['model'] ?? '' ) ) ) );
 
+        $ms_script = '';
         if ( $show_filters ) {
             echo '<div id="expman-ms-data-' . esc_attr( $uid ) . '" style="display:none"'
                 . ' data-vendor-options="' . esc_attr( wp_json_encode( $vendor_opts ) ) . '"'
@@ -2167,14 +2480,18 @@ echo '<style>.expman-frontend.expman-firewalls input,.expman-frontend.expman-fir
                 . ' data-model-selected="'  . esc_attr( wp_json_encode( array_values( $model_sel ) ) )  . '"'
                 . '></div>';
 
-            echo '<script>
+            $ms_script = '<script>
             (function(){
-              const dataEl = document.currentScript.previousElementSibling;
-              function get(key){try{return JSON.parse(document.getElementById("expman-ms-data-' . esc_js( $uid ) . '").dataset[key]||"[]")}catch(e){return []}}
+              const dataEl = document.getElementById("expman-ms-data-' . esc_js( $uid ) . '");
+              if(!dataEl){return;}
+              const wrap = dataEl.closest(".expman-table-wrap");
+              function get(key){try{return JSON.parse(dataEl.dataset[key]||"[]")}catch(e){return []}}
               const optsVendor=get("vendorOptions"), optsModel=get("modelOptions");
               const selVendor=new Set(get("vendorSelected")), selModel=new Set(get("modelSelected"));
 
               function build(th, key, options, selected){
+                if(th.dataset.expmanMsBuilt){return;}
+                th.dataset.expmanMsBuilt="1";
                 const hidden=document.createElement("input");
                 hidden.type="hidden"; hidden.name = key==="vendor" ? "f_vendor" : "f_model";
                 hidden.value=Array.from(selected).join(",");
@@ -2234,12 +2551,18 @@ echo '<style>.expman-frontend.expman-firewalls input,.expman-frontend.expman-fir
                 th.closest("form").addEventListener("submit",()=>{ hidden.value=Array.from(selected).join(","); });
               }
 
-              document.querySelectorAll("th.expman-ms-wrap[data-ms=vendor]").forEach(th=>build(th,"vendor",optsVendor,selVendor));
-              document.querySelectorAll("th.expman-ms-wrap[data-ms=model]").forEach(th=>build(th,"model",optsModel,selModel));
+              if(!wrap){return;}
+              wrap.querySelectorAll("th.expman-ms-wrap[data-ms=vendor]").forEach(th=>build(th,"vendor",optsVendor,selVendor));
+              wrap.querySelectorAll("th.expman-ms-wrap[data-ms=model]").forEach(th=>build(th,"model",optsModel,selModel));
             })();
             </script>';
 
+            foreach ( $hidden_filters as $name => $value ) {
+                echo '<input type="hidden" name="' . esc_attr( $name ) . '" value="' . esc_attr( $value ) . '">';
+            }
+
             foreach ( $_GET as $k => $v ) {
+                if ( isset( $skip_keys[ $k ] ) ) { continue; }
                 if ( strpos( $k, 'f_' ) === 0 || in_array( $k, array( 'orderby','order' ), true ) ) { continue; }
                 echo '<input type="hidden" name="' . esc_attr( $k ) . '" value="' . esc_attr( $v ) . '">';
             }
@@ -2251,12 +2574,14 @@ echo '<style>.expman-frontend.expman-firewalls input,.expman-frontend.expman-fir
         $this->th_sort( 'customer_number', 'מספר לקוח', $orderby, $order, $base );
         $this->th_sort( 'customer_name', 'שם לקוח', $orderby, $order, $base );
         $this->th_sort( 'branch', 'סניף', $orderby, $order, $base );
-        $this->th_sort( 'serial_number', 'מספר סידורי', $orderby, $order, $base );
+        $this->th_sort( 'serial_number', 'מספר סידורי', $orderby, $order, $base, 'expman-align-left' );
         $this->th_sort( 'days_to_renew', 'ימים לחידוש', $orderby, $order, $base );
-        $this->th_sort( 'vendor', 'יצרן', $orderby, $order, $base );
-        $this->th_sort( 'model', 'דגם', $orderby, $order, $base );
-        $this->th_sort( 'is_managed', 'ניהול', $orderby, $order, $base );
-        $this->th_sort( 'track_only', 'מעקב', $orderby, $order, $base );
+        $this->th_sort( 'vendor', 'יצרן', $orderby, $order, $base, 'expman-align-left' );
+        $this->th_sort( 'model', 'דגם', $orderby, $order, $base, 'expman-align-left' );
+        if ( $show_status_cols ) {
+            $this->th_sort( 'is_managed', 'ניהול', $orderby, $order, $base );
+            $this->th_sort( 'track_only', 'מעקב', $orderby, $order, $base );
+        }
         echo '<th>גישה</th>';
         echo '<th>פעולות</th>';
         echo '</tr>';
@@ -2267,20 +2592,25 @@ echo '<style>.expman-frontend.expman-firewalls input,.expman-frontend.expman-fir
             echo '<th><input style="width:100%" name="f_customer_number" value="' . esc_attr( $filters['customer_number'] ) . '" placeholder="סינון..."></th>';
             echo '<th><input style="width:100%" name="f_customer_name" value="' . esc_attr( $filters['customer_name'] ) . '" placeholder="סינון..."></th>';
             echo '<th><input style="width:100%" name="f_branch" value="' . esc_attr( $filters['branch'] ) . '" placeholder="סינון..."></th>';
-            echo '<th><input style="width:100%" name="f_serial_number" value="' . esc_attr( $filters['serial_number'] ) . '" placeholder="סינון..."></th>';
+            echo '<th class="expman-align-left"><input style="width:100%" name="f_serial_number" value="' . esc_attr( $filters['serial_number'] ) . '" placeholder="סינון..."></th>';
             echo '<th></th>'; // days_to_renew
-            echo '<th class="expman-ms-wrap" data-ms="vendor"></th>';
-            echo '<th class="expman-ms-wrap" data-ms="model"></th>';
-            echo '<th><select name="f_is_managed" style="width:100%;">';
-            echo '<option value="">הכל</option>';
-            echo '<option value="1" ' . selected( $filters['is_managed'], '1', false ) . '>שלנו</option>';
-            echo '<option value="0" ' . selected( $filters['is_managed'], '0', false ) . '>לא שלנו</option>';
-            echo '</select></th>';
-            echo '<th><select name="f_track_only" style="width:100%;">';
-            echo '<option value="">הכל</option>';
-            echo '<option value="1" ' . selected( $filters['track_only'], '1', false ) . '>כן</option>';
-            echo '<option value="0" ' . selected( $filters['track_only'], '0', false ) . '>לא</option>';
-            echo '</select></th>';
+            echo '<th class="expman-ms-wrap expman-align-left" data-ms="vendor"></th>';
+            echo '<th class="expman-ms-wrap expman-align-left" data-ms="model"></th>';
+            if ( $show_status_cols && $show_status_filters ) {
+                echo '<th><select name="f_is_managed" style="width:100%;">';
+                echo '<option value="">הכל</option>';
+                echo '<option value="1" ' . selected( $filters['is_managed'], '1', false ) . '>שלנו</option>';
+                echo '<option value="0" ' . selected( $filters['is_managed'], '0', false ) . '>לא שלנו</option>';
+                echo '</select></th>';
+                echo '<th><select name="f_track_only" style="width:100%;">';
+                echo '<option value="">הכל</option>';
+                echo '<option value="1" ' . selected( $filters['track_only'], '1', false ) . '>כן</option>';
+                echo '<option value="0" ' . selected( $filters['track_only'], '0', false ) . '>לא</option>';
+                echo '</select></th>';
+            } elseif ( $show_status_cols ) {
+                echo '<th></th>';
+                echo '<th></th>';
+            }
             echo '<th></th>'; // access
             echo '<th style="white-space:nowrap;">';
             echo '<button class="expman-btn secondary" type="submit">סנן</button> ';
@@ -2293,11 +2623,13 @@ echo '<style>.expman-frontend.expman-firewalls input,.expman-frontend.expman-fir
 
         echo '</thead><tbody>';
 
+        $column_count = $show_status_cols ? 11 : 9;
         if ( empty( $rows ) ) {
-            echo '<tr><td colspan="11">אין נתונים.</td></tr></tbody></table>';
+            echo '<tr><td colspan="' . esc_attr( $column_count ) . '">אין נתונים.</td></tr></tbody></table>';
             if ( $show_filters ) {
                 echo '</form>';
             }
+            echo '</div>';
             return;
         }
 
@@ -2324,12 +2656,14 @@ echo '<style>.expman-frontend.expman-firewalls input,.expman-frontend.expman-fir
                         echo '<td>' . esc_html( $r->customer_number ?? '' ) . '</td>';
             echo '<td>' . esc_html( $r->customer_name ?? '' ) . '</td>';
             echo '<td>' . esc_html( $r->branch ?? '' ) . '</td>';
-            echo '<td>' . esc_html( $r->serial_number ) . '</td>';
+            echo '<td class="expman-align-left">' . esc_html( $r->serial_number ) . '</td>';
                         echo '<td>' . esc_html( $days ) . '</td>';
-            echo '<td>' . esc_html( $r->vendor ?? '' ) . '</td>';
-            echo '<td>' . esc_html( $r->model ?? '' ) . '</td>';
-            echo '<td>' . esc_html( $managed_label ) . '</td>';
-            echo '<td>' . esc_html( intval( $r->track_only ) ? 'כן' : 'לא' ) . '</td>';
+            echo '<td class="expman-align-left">' . esc_html( $r->vendor ?? '' ) . '</td>';
+            echo '<td class="expman-align-left">' . esc_html( $r->model ?? '' ) . '</td>';
+            if ( $show_status_cols ) {
+                echo '<td>' . esc_html( $managed_label ) . '</td>';
+                echo '<td>' . esc_html( intval( $r->track_only ) ? 'כן' : 'לא' ) . '</td>';
+            }
             echo '<td>' . $access_btn . '</td>';
 
             echo '<td style="white-space:nowrap;" onclick="event.stopPropagation();">';
@@ -2367,13 +2701,13 @@ echo '<style>.expman-frontend.expman-firewalls input,.expman-frontend.expman-fir
 
             // Inline edit form row (hidden)
             echo '<tr class="expman-inline-form" data-for="' . esc_attr( $r->id ) . '" style="display:none;background:#fff;">';
-            echo '<td colspan="11">';
+            echo '<td colspan="' . esc_attr( $column_count ) . '">';
             $this->render_form( intval( $r->id ), $r );
             echo '</td></tr>';
 
             // Details row (click row expands)
             echo '<tr class="expman-details" data-for="' . esc_attr( $r->id ) . '" style="display:none;background:#fafafa;">';
-            echo '<td colspan="11">';
+            echo '<td colspan="' . esc_attr( $column_count ) . '">';
             echo '<div style="display:flex;gap:20px;flex-wrap:wrap;">';
             echo '<div style="min-width:260px;"><strong>הערה קבועה:</strong><div style="white-space:pre-wrap;">' . esc_html( (string) $r->notes ) . '</div></div>';
             echo '<div style="min-width:260px;"><strong>הודעה זמנית:</strong><div style="white-space:pre-wrap;">' . esc_html( intval( $r->temp_notice_enabled ) ? (string) $r->temp_notice : '' ) . '</div></div>';
@@ -2386,6 +2720,10 @@ echo '<style>.expman-frontend.expman-firewalls input,.expman-frontend.expman-fir
         if ( $show_filters ) {
             echo '</form>';
         }
+        if ( $ms_script !== '' ) {
+            echo $ms_script;
+        }
+        echo '</div>';
 
         echo '<script>(function(){
           const dataEl = document.currentScript.previousElementSibling;';
@@ -2397,10 +2735,11 @@ echo '<style>.expman-frontend.expman-firewalls input,.expman-frontend.expman-fir
         echo '})();</script>';
     }
 
-    private function th_sort( $key, $label, $orderby, $order, $base ) {
+    private function th_sort( $key, $label, $orderby, $order, $base, $class = '' ) {
         $next_order = ( $orderby === $key && strtoupper( $order ) === 'ASC' ) ? 'DESC' : 'ASC';
         $url = add_query_arg( array( 'orderby' => $key, 'order' => $next_order ), $base );
-        echo '<th><a href="' . esc_url( $url ) . '" style="text-decoration:none;">' . esc_html( $label ) . '</a></th>';
+        $class_attr = $class !== '' ? ' class="' . esc_attr( $class ) . '"' : '';
+        echo '<th' . $class_attr . '><a href="' . esc_url( $url ) . '" style="text-decoration:none;">' . esc_html( $label ) . '</a></th>';
     }
 
     private function render_form( $id = 0, $row_obj = null ) {
