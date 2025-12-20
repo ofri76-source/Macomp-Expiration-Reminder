@@ -79,7 +79,7 @@ class Expman_Firewalls_Page {
             track_only TINYINT(1) NOT NULL DEFAULT 0,
             box_type_id BIGINT(20) NULL,
             expiry_date DATE NULL,
-            access_url VARCHAR(2048) NULL,
+            access_url VARCHAR(255) NULL,
             notes TEXT NULL,
             temp_notice_enabled TINYINT(1) NOT NULL DEFAULT 0,
             temp_notice TEXT NULL,
@@ -267,22 +267,15 @@ dbDelta( $sql_types );
         update_option( $this->option_key, $settings );
     }
 
-private function get_forticloud_endpoints() {
+    private function get_forticloud_endpoints() {
         $defaults = array(
-            // Fortinet Support Portal - Asset Management API
-            'assets' => '/app/asset/api/products',
-
-            // OAuth token retrieval (FortiAuthenticator) - FortiGate Cloud / FortiCloud IAM API Users
-            'token'  => 'https://customerapiauth.fortinet.com/api/v1/oauth/token/',
-
-            // Optional update endpoint (varies by API availability)
-            'update' => '',
+            'token'  => '/iam/v1/oauth/token',
+            'assets' => '/asset/v1/products',
+            'update' => '/asset/v1/products/{serial}',
         );
 
         return apply_filters( 'expman_forticloud_endpoints', $defaults );
     }
-
-
 
     private function log_firewall_event( $firewall_id, $action, $message = '', $context = array(), $level = 'info' ) {
         global $wpdb;
@@ -300,67 +293,6 @@ private function get_forticloud_endpoints() {
             array( '%d', '%s', '%s', '%s', '%s', '%s' )
         );
     }
-
-
-    private function new_request_id() {
-        return 'sync_' . gmdate('Ymd_His') . '_' . substr( wp_hash( microtime( true ) . rand() ), 0, 10 );
-    }
-
-    private function http_debug_context( $url, $response ) {
-        if ( is_wp_error( $response ) ) {
-            return array(
-                'url'   => $url,
-                'error' => $response->get_error_message(),
-                'data'  => $response->get_error_data(),
-            );
-        }
-
-        $code = wp_remote_retrieve_response_code( $response );
-        $body = wp_remote_retrieve_body( $response );
-
-        return array(
-            'url'          => $url,
-            'http_code'    => $code,
-            'body_preview' => mb_substr( (string) $body, 0, 2000 ),
-        );
-    }
-
-    private function normalize_base_url_and_endpoints( $base_url, &$endpoints ) {
-        $base_url = trim( (string) $base_url );
-        if ( $base_url === '' ) {
-            return '';
-        }
-
-        // If user pasted a full endpoint URL, split it into base_url + assets endpoint override.
-        $parts = wp_parse_url( $base_url );
-        if ( empty( $parts['scheme'] ) || empty( $parts['host'] ) ) {
-            $base_url = 'https://' . ltrim( $base_url, '/' );
-            $parts = wp_parse_url( $base_url );
-        }
-
-        if ( empty( $parts['scheme'] ) || empty( $parts['host'] ) ) {
-            return trim( $base_url );
-        }
-
-        $scheme = $parts['scheme'];
-        $host   = $parts['host'];
-        $port   = isset( $parts['port'] ) ? ':' . intval( $parts['port'] ) : '';
-        $path   = isset( $parts['path'] ) ? (string) $parts['path'] : '';
-
-        $normalized = $scheme . '://' . $host . $port;
-
-        if ( $path && $path !== '/' ) {
-            $path = '/' . ltrim( $path, '/' );
-            if ( strpos( $path, '/app/asset/api/' ) === 0 || strpos( $path, '/asset/' ) === 0 ) {
-                if ( empty( $endpoints['assets'] ) || $endpoints['assets'] === '/app/asset/api/products' || $endpoints['assets'] === '/asset/v1/products' ) {
-                    $endpoints['assets'] = $path;
-                }
-            }
-        }
-
-        return $normalized;
-    }
-
 
     private function get_active_tab() {
         $allowed = array( 'main', 'bulk', 'settings', 'trash', 'logs' );
@@ -563,15 +495,13 @@ if ( $id > 0 ) {
     private function action_save_forticloud_settings() {
         $api_id     = sanitize_text_field( $_POST['forticloud_api_id'] ?? '' );
         $client_id  = sanitize_text_field( $_POST['forticloud_client_id'] ?? '' );
-        $base_url   = isset( $_POST['forticloud_base_url'] ) ? esc_url_raw( wp_unslash( $_POST['forticloud_base_url'] ) ) : '';
+        $base_url   = esc_url_raw( $_POST['forticloud_base_url'] ?? '' );
         $secret_new = isset( $_POST['forticloud_api_secret'] ) ? trim( (string) wp_unslash( $_POST['forticloud_api_secret'] ) ) : '';
 
         $forti_settings = $this->get_forticloud_settings();
         $forti_settings['api_id'] = $api_id;
         $forti_settings['client_id'] = $client_id !== '' ? $client_id : 'assetmanagement';
-        $tmp_endpoints = $this->get_forticloud_endpoints();
-        $base_url_norm = $this->normalize_base_url_and_endpoints( $base_url, $tmp_endpoints );
-        $forti_settings['base_url'] = $base_url_norm !== '' ? $base_url_norm : $base_url;
+        $forti_settings['base_url'] = $base_url;
 
         if ( $secret_new !== '' ) {
             $forti_settings['api_secret'] = $this->encrypt_secret( $secret_new );
@@ -582,156 +512,106 @@ if ( $id > 0 ) {
         $this->log_firewall_event( null, 'forticloud_settings', 'הגדרות FortiCloud נשמרו' );
     }
 
-
-
-private function action_sync_forticloud_assets() {
-        $settings  = $this->get_forticloud_settings();
-        $api_id    = $settings['api_id'] ?? '';
+    private function action_sync_forticloud_assets() {
+        $settings = $this->get_forticloud_settings();
+        $api_id = $settings['api_id'] ?? '';
         $client_id = $settings['client_id'] ?? 'assetmanagement';
-        $base_url  = $settings['base_url'] ?? '';
-        $secret    = $this->decrypt_secret( $settings['api_secret'] ?? array() );
+        $base_url = $settings['base_url'] ?? '';
+        $secret = $this->decrypt_secret( $settings['api_secret'] ?? array() );
 
-        $request_id = $this->new_request_id();
-        $this->log_firewall_event( null, 'forticloud_sync', 'התחלת סנכרון נכסים', array(
-            'request_id' => $request_id,
-        ), 'info' );
+        $this->log_firewall_event( null, 'forticloud_sync', 'התחלת סנכרון נכסים' );
+
+        if ( $api_id === '' || $client_id === '' || $secret === '' ) {
+            $this->add_notice( 'חסרים פרטי התחברות ל-FortiCloud. נא לעדכן בהגדרות.', 'error' );
+            $this->log_firewall_event( null, 'forticloud_sync', 'חסרים פרטי התחברות ל-FortiCloud', array(), 'error' );
+            return;
+        }
 
         if ( $base_url === '' ) {
-            $base_url = 'https://support.fortinet.com';
+            $base_url = 'https://api.forticloud.com';
         }
 
         $endpoints = $this->get_forticloud_endpoints();
+        $token_url = rtrim( $base_url, '/' ) . ( $endpoints['token'] ?? '' );
 
-        // Normalize base_url (strip any pasted path) and allow pasted endpoint to override assets endpoint
-        $base_url = $this->normalize_base_url_and_endpoints( $base_url, $endpoints );
-
-        $token_ep  = $endpoints['token'] ?? '';
-        $assets_ep = $endpoints['assets'] ?? '';
-
-        if ( $assets_ep === '' ) {
-            $this->add_notice( 'חסר endpoint לנכסים (assets).', 'error' );
-            $this->log_firewall_event( null, 'forticloud_sync', 'חסר endpoint לנכסים (assets)', array(
-                'request_id' => $request_id,
-                'endpoints'  => $endpoints,
-            ), 'error' );
-            return;
-        }
-
-        if ( $api_id === '' || $client_id === '' || $secret === '' ) {
-            $this->add_notice( 'חסרים פרטי התחברות (API Key/Username, Password, Client ID).', 'error' );
-            $this->log_firewall_event( null, 'forticloud_sync', 'חסרים פרטי התחברות', array(
-                'request_id' => $request_id,
-            ), 'error' );
-            return;
-        }
-
-        if ( $token_ep === '' ) {
-            $this->add_notice( 'חסר endpoint לטוקן (token).', 'error' );
-            $this->log_firewall_event( null, 'forticloud_sync', 'חסר endpoint לטוקן', array(
-                'request_id' => $request_id,
-                'endpoints'  => $endpoints,
-            ), 'error' );
-            return;
-        }
-
-        // Support absolute token URL (default is FortiAuthenticator)
-        $token_url = ( preg_match( '#^https?://#i', $token_ep ) ) ? $token_ep : ( rtrim( $base_url, '/' ) . $token_ep );
-
-        // FortiAuthenticator token retrieval API expects JSON. Credentials file provides API Key (username) + Password.
-        $token_payload = array(
-            'username'   => $api_id,
-            'password'   => $secret,
-            'client_id'  => $client_id,
-            'grant_type' => 'password',
+        $token_body = array(
+            'grant_type'    => 'client_credentials',
+            'client_id'     => $client_id,
+            'client_secret' => $secret,
+            'api_id'        => $api_id,
+            'scope'         => 'assetmanagement',
         );
-        $token_payload = apply_filters( 'expman_forticloud_token_request_body', $token_payload, $settings );
+        $token_body = apply_filters( 'expman_forticloud_token_request_body', $token_body, $settings );
 
         $token_response = wp_remote_post( $token_url, array(
-            'timeout' => 30,
-            'headers' => array(
-                'Content-Type' => 'application/json',
-                'Accept'        => 'application/json',
-            ),
-            'body'    => wp_json_encode( $token_payload ),
+            'timeout' => 20,
+            'headers' => array( 'Content-Type' => 'application/x-www-form-urlencoded' ),
+            'body'    => $token_body,
         ) );
-
-        $this->log_firewall_event( null, 'forticloud_sync', 'תגובת טוקן (debug)', array(
-            'request_id' => $request_id,
-            'debug'      => $this->http_debug_context( $token_url, $token_response ),
-        ), is_wp_error( $token_response ) ? 'error' : 'info' );
 
         if ( is_wp_error( $token_response ) ) {
             $this->add_notice( 'שגיאה בקבלת טוקן: ' . $token_response->get_error_message(), 'error' );
+            $this->log_firewall_event( null, 'forticloud_sync', 'שגיאה בקבלת טוקן', array( 'error' => $token_response->get_error_message() ), 'error' );
             return;
         }
 
-        $token_raw  = (string) wp_remote_retrieve_body( $token_response );
-        $token_data = json_decode( $token_raw, true );
-        $access_token = is_array( $token_data ) ? ( $token_data['access_token'] ?? '' ) : '';
-
+        $token_data = json_decode( wp_remote_retrieve_body( $token_response ), true );
+        $access_token = $token_data['access_token'] ?? '';
         if ( $access_token === '' ) {
-            $this->add_notice( 'לא התקבל access token מהשרת. ראה לוגים.', 'error' );
-            $this->log_firewall_event( null, 'forticloud_sync', 'לא התקבל access token', array(
-                'request_id'        => $request_id,
-                'token_raw_preview' => mb_substr( $token_raw, 0, 2000 ),
-                'token_keys'        => is_array( $token_data ) ? array_keys( $token_data ) : null,
-            ), 'error' );
+            $this->add_notice( 'לא התקבל access token מהשרת.', 'error' );
+            $this->log_firewall_event( null, 'forticloud_sync', 'לא התקבל access token', array( 'response' => $token_data ), 'error' );
             return;
         }
 
-        // Assets request
-        $assets_url = rtrim( $base_url, '/' ) . $assets_ep;
+        $assets_url = rtrim( $base_url, '/' ) . ( $endpoints['assets'] ?? '' );
 
-        $assets_response = wp_remote_get( $assets_url, array(
-            'timeout' => 45,
-            'headers' => array(
-                'Authorization' => 'Bearer ' . $access_token,
-                'Accept'        => 'application/json',
-            ),
-        ) );
+// Some Fortinet portals expect the token as a query param (in addition to Authorization header).
+// We send both to maximize compatibility.
+$assets_url = add_query_arg(
+    array(
+        'access_token' => $access_token,
+        'client_id'    => $client_id,
+    ),
+    $assets_url
+);
 
-        $this->log_firewall_event( null, 'forticloud_sync', 'תגובת נכסים (debug)', array(
-            'request_id' => $request_id,
-            'debug'      => $this->http_debug_context( $assets_url, $assets_response ),
-        ), is_wp_error( $assets_response ) ? 'error' : 'info' );
+$assets_headers = array(
+    'Authorization' => 'Bearer ' . $access_token,
+    'Accept'        => 'application/json',
+);
+
+// Some gateways expect these headers as well.
+if ( $api_id !== '' ) {
+    $assets_headers['X-API-Key'] = $api_id;
+}
+if ( $client_id !== '' ) {
+    $assets_headers['X-Client-ID'] = $client_id;
+}
+
+$assets_response = wp_remote_get( $assets_url, array(
+    'timeout' => 30,
+    'headers' => $assets_headers,
+) );
 
         if ( is_wp_error( $assets_response ) ) {
             $this->add_notice( 'שגיאה בשליפת נכסים: ' . $assets_response->get_error_message(), 'error' );
+            $this->log_firewall_event( null, 'forticloud_sync', 'שגיאה בשליפת נכסים', array( 'error' => $assets_response->get_error_message() ), 'error' );
             return;
         }
 
-        $assets_raw = (string) wp_remote_retrieve_body( $assets_response );
-        $assets_payload = json_decode( $assets_raw, true );
-
-        if ( ! is_array( $assets_payload ) ) {
-            $this->add_notice( 'תגובה לא צפויה (לא JSON). ראה לוגים.', 'error' );
-            $this->log_firewall_event( null, 'forticloud_sync', 'תגובה לא JSON', array(
-                'request_id'  => $request_id,
-                'raw_preview' => mb_substr( $assets_raw, 0, 2000 ),
-            ), 'error' );
-            return;
-        }
-
+        $assets_payload = json_decode( wp_remote_retrieve_body( $assets_response ), true );
         $assets = $this->normalize_assets_payload( $assets_payload );
+
         if ( empty( $assets ) ) {
             $this->add_notice( 'לא נמצאו נכסים לעדכון.', 'warning' );
-            $this->log_firewall_event( null, 'forticloud_sync', 'לא נמצאו נכסים לעדכון', array(
-                'request_id'    => $request_id,
-                'payload_keys'  => array_keys( $assets_payload ),
-            ), 'warning' );
+            $this->log_firewall_event( null, 'forticloud_sync', 'לא נמצאו נכסים לעדכון', array( 'response' => $assets_payload ), 'warning' );
             return;
         }
 
-        $saved = $this->upsert_forticloud_assets( $assets, $request_id );
-
+        $saved = $this->upsert_forticloud_assets( $assets );
         $this->add_notice( 'סנכרון הושלם. עודכנו ' . intval( $saved ) . ' נכסים.' );
-        $this->log_firewall_event( null, 'forticloud_sync', 'סנכרון הושלם', array(
-            'request_id' => $request_id,
-            'count'      => intval( $saved ),
-        ), 'info' );
+        $this->log_firewall_event( null, 'forticloud_sync', 'סנכרון הושלם', array( 'count' => intval( $saved ) ) );
     }
-
-
 
     private function action_map_forticloud_asset() {
         global $wpdb;
@@ -1110,7 +990,7 @@ private function action_sync_forticloud_assets() {
         return null;
     }
 
-private function upsert_forticloud_assets( $assets, $request_id = '' ) {
+    private function upsert_forticloud_assets( $assets ) {
         global $wpdb;
         $assets_table = $wpdb->prefix . self::TABLE_FORTICLOUD_ASSETS;
         $saved = 0;
@@ -1142,69 +1022,32 @@ private function upsert_forticloud_assets( $assets, $request_id = '' ) {
             $expiration_date = $expiration ? date( 'Y-m-d', strtotime( (string) $expiration ) ) : null;
 
             $data = array(
-                'forticloud_id'     => $forticloud_id !== '' ? $forticloud_id : null,
-                'serial_number'     => $serial,
-                'category_name'     => $category !== '' ? $category : null,
-                'model_name'        => $model !== '' ? $model : null,
-                'registration_date' => $registration_date,
-                'ship_date'         => $ship_date,
-                'expiration_date'   => $expiration_date,
-                'description'       => $description !== '' ? $description : null,
-                'folder_id'         => $folder !== '' ? $folder : null,
-                'asset_groups'      => $groups_value !== '' ? $groups_value : null,
-                'raw_json'          => wp_json_encode( $asset ),
-                'updated_at'        => current_time( 'mysql' ),
-                'deleted_at'        => null,
+                'forticloud_id'    => $forticloud_id !== '' ? $forticloud_id : null,
+                'serial_number'    => $serial,
+                'category_name'    => $category !== '' ? $category : null,
+                'model_name'       => $model !== '' ? $model : null,
+                'registration_date'=> $registration_date,
+                'ship_date'        => $ship_date,
+                'expiration_date'  => $expiration_date,
+                'description'      => $description !== '' ? $description : null,
+                'folder_id'        => $folder !== '' ? $folder : null,
+                'asset_groups'     => $groups_value !== '' ? $groups_value : null,
+                'raw_json'         => wp_json_encode( $asset ),
+                'updated_at'       => current_time( 'mysql' ),
             );
 
-            $existing = $wpdb->get_row( $wpdb->prepare( "SELECT * FROM {$assets_table} WHERE serial_number=%s LIMIT 1", $serial ), ARRAY_A );
-
-            if ( $existing ) {
-                $compare_keys = array(
-                    'forticloud_id','category_name','model_name','registration_date','ship_date','expiration_date',
-                    'description','folder_id','asset_groups','customer_id','customer_number_snapshot','customer_name_snapshot','deleted_at'
-                );
-
-                $before = array();
-                $after  = array();
-                $changed = false;
-
-                foreach ( $compare_keys as $k ) {
-                    $before[$k] = $existing[$k] ?? null;
-                    $after[$k]  = $data[$k] ?? null;
-                    if ( (string) $before[$k] !== (string) $after[$k] ) {
-                        $changed = true;
-                    }
-                }
-
-                if ( $changed ) {
-                    $ok = $wpdb->update( $assets_table, $data, array( 'id' => intval( $existing['id'] ) ) );
-                    $this->log_firewall_event( null, 'forticloud_asset_update', 'עודכן נכס Fortinet', array(
-                        'request_id' => $request_id,
-                        'serial'     => $serial,
-                        'before'     => $before,
-                        'after'      => $after,
-                        'db_error'   => $ok === false ? $wpdb->last_error : null,
-                    ), $ok === false ? 'error' : 'info' );
-                }
+            $existing_id = $wpdb->get_var( $wpdb->prepare( "SELECT id FROM {$assets_table} WHERE serial_number=%s", $serial ) );
+            if ( $existing_id ) {
+                $wpdb->update( $assets_table, $data, array( 'id' => intval( $existing_id ) ) );
             } else {
                 $data['created_at'] = current_time( 'mysql' );
-                $ok = $wpdb->insert( $assets_table, $data );
-                $this->log_firewall_event( null, 'forticloud_asset_insert', 'נוסף נכס Fortinet', array(
-                    'request_id' => $request_id,
-                    'serial'     => $serial,
-                    'after'      => $data,
-                    'db_error'   => $ok === false ? $wpdb->last_error : null,
-                ), $ok === false ? 'error' : 'info' );
+                $wpdb->insert( $assets_table, $data );
             }
-
             $saved++;
         }
 
         return $saved;
     }
-
-
 
     private function update_forticloud_description( $asset, $customer ) {
         $settings = $this->get_forticloud_settings();
@@ -1259,6 +1102,13 @@ private function upsert_forticloud_assets( $assets, $request_id = '' ) {
         $endpoint = str_replace( array( '{serial}', '{id}' ), array( rawurlencode( $serial ), rawurlencode( $asset_id ) ), $endpoint );
         $update_url = rtrim( $base_url, '/' ) . $endpoint;
 
+$update_url = add_query_arg(
+    array(
+        'access_token' => $access_token,
+        'client_id'    => $client_id,
+    ),
+    $update_url
+);
         $description = trim( $customer->customer_number . ' - ' . $customer->customer_name );
         $payload = apply_filters(
             'expman_forticloud_update_payload',
@@ -1267,16 +1117,24 @@ private function upsert_forticloud_assets( $assets, $request_id = '' ) {
             $customer
         );
 
-        $update_response = wp_remote_request( $update_url, array(
-            'method'  => 'PATCH',
-            'timeout' => 20,
-            'headers' => array(
-                'Authorization' => 'Bearer ' . $access_token,
-                'Accept'        => 'application/json',
-                'Content-Type'  => 'application/json',
-            ),
-            'body'    => wp_json_encode( $payload ),
-        ) );
+        $update_headers = array(
+    'Authorization' => 'Bearer ' . $access_token,
+    'Accept'        => 'application/json',
+    'Content-Type'  => 'application/json',
+);
+if ( $api_id !== '' ) {
+    $update_headers['X-API-Key'] = $api_id;
+}
+if ( $client_id !== '' ) {
+    $update_headers['X-Client-ID'] = $client_id;
+}
+
+$update_response = wp_remote_request( $update_url, array(
+    'method'  => 'PATCH',
+    'timeout' => 20,
+    'headers' => $update_headers,
+    'body'    => wp_json_encode( $payload ),
+) );
 
         if ( is_wp_error( $update_response ) ) {
             $this->log_firewall_event( null, 'forticloud_update', 'שגיאה בעדכון תיאור', array( 'error' => $update_response->get_error_message() ), 'error' );
