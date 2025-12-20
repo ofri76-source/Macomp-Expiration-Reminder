@@ -100,6 +100,19 @@ class Expman_Firewalls_UI {
             echo '<div class="notice notice-error"><p>' . esc_html( implode( ' | ', (array) $errors ) ) . '</p></div>';
         }
 
+        $assign_failures = get_transient( 'expman_firewalls_assign_failures' );
+        if ( ! empty( $assign_failures ) ) {
+            delete_transient( 'expman_firewalls_assign_failures' );
+            $lines = array();
+            foreach ( (array) $assign_failures as $failure ) {
+                $serial = $failure['serial_number'] ?? '';
+                $msg = $failure['error'] ?? '';
+                $label = $serial !== '' ? "({$serial})" : '';
+                $lines[] = trim( "שורה {$failure['stage_id']} {$label}: {$msg}" );
+            }
+            echo '<div class="notice notice-error"><p>' . esc_html( implode( ' | ', $lines ) ) . '</p></div>';
+        }
+
         $batch_id = get_transient( 'expman_firewalls_import_batch' );
         if ( $batch_id ) {
             delete_transient( 'expman_firewalls_import_batch' );
@@ -472,6 +485,13 @@ class Expman_Firewalls_UI {
             echo '<div class="notice notice-warning"><p>לא נמצאו שורות עבור ה־Batch הזה.</p></div>';
             return;
         }
+
+        echo '<form method="post" style="margin-bottom:12px;">';
+        wp_nonce_field( 'expman_firewalls' );
+        echo '<input type="hidden" name="expman_action" value="assign_import_stage_bulk">';
+        echo '<input type="hidden" name="batch" value="' . esc_attr( $batch_id ) . '">';
+        echo '<button class="button button-primary" type="submit">שיוך הכל</button>';
+        echo '</form>';
 
         echo '<table class="widefat striped">';
         echo '<thead><tr>';

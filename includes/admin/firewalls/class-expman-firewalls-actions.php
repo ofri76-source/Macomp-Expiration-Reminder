@@ -764,37 +764,73 @@ class Expman_Firewalls_Actions {
     public function action_assign_import_stage() {
         global $wpdb;
         $stage_table = $wpdb->prefix . Expman_Firewalls_Page::TABLE_FIREWALL_IMPORT_STAGE;
-        $fw_table    = $wpdb->prefix . Expman_Firewalls_Page::TABLE_FIREWALLS;
-        $types_table = $wpdb->prefix . Expman_Firewalls_Page::TABLE_TYPES;
 
         $stage_id = intval( $_POST['stage_id'] ?? 0 );
         if ( $stage_id <= 0 ) {
             return;
         }
 
-        $stage = $wpdb->get_row( $wpdb->prepare( "SELECT * FROM {$stage_table} WHERE id=%d", $stage_id ), ARRAY_A );
-        if ( ! $stage ) {
+        $this->assign_stage_row( $stage_id, $_POST );
+    }
+
+    public function action_assign_import_stage_bulk() {
+        global $wpdb;
+        $stage_table = $wpdb->prefix . Expman_Firewalls_Page::TABLE_FIREWALL_IMPORT_STAGE;
+        $batch_id = sanitize_text_field( $_POST['batch'] ?? '' );
+        if ( $batch_id === '' ) {
             return;
         }
 
-        $serial = sanitize_text_field( $_POST['serial_number'] ?? $stage['serial_number'] ?? '' );
-        $customer_id = isset( $_POST['customer_id'] ) ? intval( $_POST['customer_id'] ) : (int) ( $stage['customer_id'] ?? 0 );
-        $customer_number = sanitize_text_field( $_POST['customer_number'] ?? $stage['customer_number'] ?? '' );
-        $customer_name = sanitize_text_field( $_POST['customer_name'] ?? $stage['customer_name'] ?? '' );
-        $branch = sanitize_text_field( $_POST['branch'] ?? $stage['branch'] ?? '' );
-        $is_managed = isset( $_POST['is_managed'] ) ? intval( $_POST['is_managed'] ) : intval( $stage['is_managed'] ?? 1 );
-        $track_only = isset( $_POST['track_only'] ) ? intval( $_POST['track_only'] ) : intval( $stage['track_only'] ?? 0 );
-        $vendor = sanitize_text_field( $_POST['vendor'] ?? $stage['vendor'] ?? '' );
-        $model = sanitize_text_field( $_POST['model'] ?? $stage['model'] ?? '' );
-        $expiry_date = sanitize_text_field( $_POST['expiry_date'] ?? $stage['expiry_date'] ?? '' );
-        $access_url = sanitize_text_field( $_POST['access_url'] ?? $stage['access_url'] ?? '' );
-        $notes = wp_kses_post( $_POST['notes'] ?? $stage['notes'] ?? '' );
-        $temp_notice_enabled = isset( $_POST['temp_notice_enabled'] ) ? intval( $_POST['temp_notice_enabled'] ) : intval( $stage['temp_notice_enabled'] ?? 0 );
-        $temp_notice = wp_kses_post( $_POST['temp_notice'] ?? $stage['temp_notice'] ?? '' );
+        $rows = $wpdb->get_results( $wpdb->prepare(
+            "SELECT id FROM {$stage_table} WHERE import_batch_id=%s AND status IN ('pending','failed') ORDER BY id ASC",
+            $batch_id
+        ) );
+        if ( empty( $rows ) ) {
+            return;
+        }
+
+        $failures = array();
+        foreach ( $rows as $row ) {
+            $result = $this->assign_stage_row( intval( $row->id ), array(), $batch_id );
+            if ( ! empty( $result['error'] ) ) {
+                $failures[] = $result;
+            }
+        }
+
+        if ( ! empty( $failures ) ) {
+            set_transient( 'expman_firewalls_assign_failures', $failures, 300 );
+        }
+    }
+
+    private function assign_stage_row( $stage_id, $input, $batch_override = '' ) {
+        global $wpdb;
+        $stage_table = $wpdb->prefix . Expman_Firewalls_Page::TABLE_FIREWALL_IMPORT_STAGE;
+        $fw_table    = $wpdb->prefix . Expman_Firewalls_Page::TABLE_FIREWALLS;
+        $types_table = $wpdb->prefix . Expman_Firewalls_Page::TABLE_TYPES;
+
+        $stage = $wpdb->get_row( $wpdb->prepare( "SELECT * FROM {$stage_table} WHERE id=%d", $stage_id ), ARRAY_A );
+        if ( ! $stage ) {
+            return array( 'stage_id' => $stage_id, 'error' => 'שורת שיוך לא נמצאה.' );
+        }
+
+        $serial = sanitize_text_field( $input['serial_number'] ?? $stage['serial_number'] ?? '' );
+        $customer_id = isset( $input['customer_id'] ) ? intval( $input['customer_id'] ) : (int) ( $stage['customer_id'] ?? 0 );
+        $customer_number = sanitize_text_field( $input['customer_number'] ?? $stage['customer_number'] ?? '' );
+        $customer_name = sanitize_text_field( $input['customer_name'] ?? $stage['customer_name'] ?? '' );
+        $branch = sanitize_text_field( $input['branch'] ?? $stage['branch'] ?? '' );
+        $is_managed = isset( $input['is_managed'] ) ? intval( $input['is_managed'] ) : intval( $stage['is_managed'] ?? 1 );
+        $track_only = isset( $input['track_only'] ) ? intval( $input['track_only'] ) : intval( $stage['track_only'] ?? 0 );
+        $vendor = sanitize_text_field( $input['vendor'] ?? $stage['vendor'] ?? '' );
+        $model = sanitize_text_field( $input['model'] ?? $stage['model'] ?? '' );
+        $expiry_date = sanitize_text_field( $input['expiry_date'] ?? $stage['expiry_date'] ?? '' );
+        $access_url = sanitize_text_field( $input['access_url'] ?? $stage['access_url'] ?? '' );
+        $notes = wp_kses_post( $input['notes'] ?? $stage['notes'] ?? '' );
+        $temp_notice_enabled = isset( $input['temp_notice_enabled'] ) ? intval( $input['temp_notice_enabled'] ) : intval( $stage['temp_notice_enabled'] ?? 0 );
+        $temp_notice = wp_kses_post( $input['temp_notice'] ?? $stage['temp_notice'] ?? '' );
 
         if ( $serial === '' ) {
             $this->mark_stage_failed( $stage_id, 'חסר מספר סידורי.' );
-            return;
+            return array( 'stage_id' => $stage_id, 'serial_number' => $serial, 'error' => 'חסר מספר סידורי.' );
         }
 
         if ( $customer_id <= 0 && $customer_number !== '' ) {
@@ -809,6 +845,16 @@ class Expman_Firewalls_Actions {
                     $customer_name = (string) ( $cust_row['customer_name'] ?? '' );
                 }
             }
+        }
+
+        if ( $customer_id <= 0 ) {
+            $this->mark_stage_failed( $stage_id, 'חובה לבחור לקוח.' );
+            return array( 'stage_id' => $stage_id, 'serial_number' => $serial, 'error' => 'חובה לבחור לקוח.' );
+        }
+
+        if ( $expiry_date === '' || ! preg_match( '/^\\d{4}-\\d{2}-\\d{2}$/', $expiry_date ) ) {
+            $this->mark_stage_failed( $stage_id, 'חובה לבחור תאריך חידוש תקין.' );
+            return array( 'stage_id' => $stage_id, 'serial_number' => $serial, 'error' => 'חובה לבחור תאריך חידוש תקין.' );
         }
 
         if ( $access_url !== '' && ! preg_match( '/^https?:\\/\\//i', $access_url ) ) {
@@ -867,14 +913,14 @@ class Expman_Firewalls_Actions {
             if ( $ok === false ) {
                 $this->mark_stage_failed( $stage_id, $wpdb->last_error );
                 $this->logger->log_firewall_event( intval( $existing_id ), 'import_stage_assign', 'עדכון חומת אש נכשל', array(
-                    'batch_id'      => $stage['import_batch_id'],
+                    'batch_id'      => $batch_override !== '' ? $batch_override : $stage['import_batch_id'],
                     'stage_id'      => $stage_id,
                     'serial_number' => $serial,
                     'customer_id'   => $customer_id,
                     'payload'       => $payload,
                     'last_error'    => $wpdb->last_error,
                 ), 'error' );
-                return;
+                return array( 'stage_id' => $stage_id, 'serial_number' => $serial, 'error' => $wpdb->last_error );
             }
             $firewall_id = intval( $existing_id );
         } else {
@@ -883,14 +929,14 @@ class Expman_Firewalls_Actions {
             if ( $ok === false ) {
                 $this->mark_stage_failed( $stage_id, $wpdb->last_error );
                 $this->logger->log_firewall_event( null, 'import_stage_assign', 'יצירת חומת אש נכשלה', array(
-                    'batch_id'      => $stage['import_batch_id'],
+                    'batch_id'      => $batch_override !== '' ? $batch_override : $stage['import_batch_id'],
                     'stage_id'      => $stage_id,
                     'serial_number' => $serial,
                     'customer_id'   => $customer_id,
                     'payload'       => $payload,
                     'last_error'    => $wpdb->last_error,
                 ), 'error' );
-                return;
+                return array( 'stage_id' => $stage_id, 'serial_number' => $serial, 'error' => $wpdb->last_error );
             }
             $firewall_id = intval( $wpdb->insert_id );
         }
@@ -926,12 +972,14 @@ class Expman_Firewalls_Actions {
         );
 
         $this->logger->log_firewall_event( $firewall_id, 'import_stage_assign', 'שיוך לאחר ייבוא', array(
-            'batch_id'      => $stage['import_batch_id'],
+            'batch_id'      => $batch_override !== '' ? $batch_override : $stage['import_batch_id'],
             'stage_id'      => $stage_id,
             'serial_number' => $serial,
             'customer_id'   => $customer_id,
             'payload'       => $payload,
         ), 'info' );
+
+        return array( 'stage_id' => $stage_id, 'serial_number' => $serial, 'error' => '' );
     }
 
     private function mark_stage_failed( $stage_id, $error_message ) {

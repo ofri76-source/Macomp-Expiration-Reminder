@@ -188,6 +188,10 @@ class Expman_Firewalls_Page {
                 $this->action_assign_import_stage();
                 $redirect_tab = 'assign';
                 break;
+            case 'assign_import_stage_bulk':
+                $this->action_assign_import_stage_bulk();
+                $redirect_tab = 'assign';
+                break;
         }
 
         $redirect_url = remove_query_arg( array( 'expman_msg' ) );
@@ -251,6 +255,10 @@ class Expman_Firewalls_Page {
 
     private function action_assign_import_stage() {
         $this->actions->action_assign_import_stage();
+    }
+
+    private function action_assign_import_stage_bulk() {
+        $this->actions->action_assign_import_stage_bulk();
     }
 
     private function render() {
