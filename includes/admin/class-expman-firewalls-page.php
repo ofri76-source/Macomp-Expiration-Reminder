@@ -39,6 +39,7 @@ class Expman_Firewalls_Page {
             'access_url'      => "ALTER TABLE {$fw_table} ADD COLUMN access_url VARCHAR(2048) NULL",
             'temp_notice_enabled' => "ALTER TABLE {$fw_table} ADD COLUMN temp_notice_enabled TINYINT(1) NOT NULL DEFAULT 0",
             'temp_notice'     => "ALTER TABLE {$fw_table} ADD COLUMN temp_notice TEXT NULL",
+            'archived_at'     => "ALTER TABLE {$fw_table} ADD COLUMN archived_at DATETIME NULL",
         );
 
         foreach ( $wanted as $col => $sql ) {
@@ -85,6 +86,7 @@ class Expman_Firewalls_Page {
             temp_notice TEXT NULL,
             created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
             updated_at DATETIME NULL,
+            archived_at DATETIME NULL,
             deleted_at DATETIME NULL,
             PRIMARY KEY (id),
             KEY customer_id (customer_id),
@@ -194,6 +196,9 @@ dbDelta( $sql_types );
         if ( ! in_array( 'track_only', $names, true ) ) {
             $wpdb->query( "ALTER TABLE {$fw_table} ADD COLUMN track_only TINYINT(1) NOT NULL DEFAULT 0 AFTER is_managed" );
         }
+        if ( ! in_array( 'archived_at', $names, true ) ) {
+            $wpdb->query( "ALTER TABLE {$fw_table} ADD COLUMN archived_at DATETIME NULL AFTER updated_at" );
+        }
     }
 
     private $option_key;
@@ -285,6 +290,16 @@ dbDelta( $sql_types );
 
     private function log_firewall_event( $firewall_id, $action, $message = '', $context = array(), $level = 'info' ) {
         global $wpdb;
+        $user = wp_get_current_user();
+        if ( $user && $user->exists() ) {
+            if ( empty( $context['user'] ) || ! is_array( $context['user'] ) ) {
+                $context['user'] = array(
+                    'id'    => $user->ID,
+                    'login' => $user->user_login,
+                    'name'  => $user->display_name,
+                );
+            }
+        }
         $logs_table = $wpdb->prefix . self::TABLE_FIREWALL_LOGS;
         $wpdb->insert(
             $logs_table,
@@ -293,11 +308,72 @@ dbDelta( $sql_types );
                 'action'      => sanitize_text_field( $action ),
                 'level'       => sanitize_text_field( $level ),
                 'message'     => sanitize_text_field( $message ),
-                'context'     => ! empty( $context ) ? wp_json_encode( $context ) : null,
+                'context'     => ! empty( $context ) ? wp_json_encode( $context, JSON_UNESCAPED_UNICODE ) : null,
                 'created_at'  => current_time( 'mysql' ),
             ),
             array( '%d', '%s', '%s', '%s', '%s', '%s' )
         );
+    }
+
+    private function format_log_value( $value, $type = 'text' ) {
+        if ( $type === 'bool' ) {
+            return intval( $value ) ? 'כן' : 'לא';
+        }
+        if ( $type === 'date' ) {
+            $value = trim( (string) $value );
+            return $value !== '' ? date_i18n( 'd/m/Y', strtotime( $value ) ) : '';
+        }
+
+        return (string) $value;
+    }
+
+    private function format_log_context( $context_json ) {
+        if ( empty( $context_json ) ) {
+            return '';
+        }
+
+        $context = json_decode( (string) $context_json, true );
+        if ( ! is_array( $context ) ) {
+            return '<pre style="white-space:pre-wrap;margin:0;">' . esc_html( (string) $context_json ) . '</pre>';
+        }
+
+        $html = '';
+        if ( ! empty( $context['user'] ) && is_array( $context['user'] ) ) {
+            $user = $context['user'];
+            $name = (string) ( $user['name'] ?? '' );
+            $login = (string) ( $user['login'] ?? '' );
+            $label = $name !== '' ? $name : $login;
+            if ( $label !== '' ) {
+                $html .= '<div><strong>משתמש:</strong> ' . esc_html( $label );
+                if ( $login !== '' && $login !== $label ) {
+                    $html .= ' (' . esc_html( $login ) . ')';
+                }
+                $html .= '</div>';
+            }
+        }
+
+        if ( ! empty( $context['changes'] ) && is_array( $context['changes'] ) ) {
+            $items = array();
+            foreach ( $context['changes'] as $change ) {
+                if ( empty( $change['field'] ) ) {
+                    continue;
+                }
+                $items[] = '<li><strong>' . esc_html( (string) $change['field'] ) . '</strong>: '
+                    . esc_html( (string) ( $change['from'] ?? '' ) ) . ' → '
+                    . esc_html( (string) ( $change['to'] ?? '' ) ) . '</li>';
+            }
+            if ( ! empty( $items ) ) {
+                $html .= '<div><strong>שינויים:</strong><ul style="margin:4px 0 0 18px;">' . implode( '', $items ) . '</ul></div>';
+            }
+        }
+
+        $extra = $context;
+        unset( $extra['user'], $extra['changes'] );
+        if ( ! empty( $extra ) ) {
+            $html .= '<pre style="white-space:pre-wrap;margin:6px 0 0;">' . esc_html( wp_json_encode( $extra, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT ) ) . '</pre>';
+        }
+
+        return $html;
     }
 
     private function new_request_id() {
@@ -361,7 +437,7 @@ dbDelta( $sql_types );
 
 
     private function get_active_tab() {
-        $allowed = array( 'main', 'bulk', 'settings', 'trash', 'logs' );
+        $allowed = array( 'main', 'bulk', 'settings', 'trash', 'logs', 'archive' );
         $tab = sanitize_key( $_REQUEST['tab'] ?? 'main' );
         return in_array( $tab, $allowed, true ) ? $tab : 'main';
     }
@@ -402,6 +478,12 @@ dbDelta( $sql_types );
             case 'restore_firewall':
                 $this->action_restore_firewall();
                 break;
+            case 'archive_firewall':
+                $this->action_archive_firewall();
+                break;
+            case 'restore_archive':
+                $this->action_restore_archive();
+                break;
             case 'import_csv':
                 $this->action_import_csv();
                 break;
@@ -438,13 +520,24 @@ dbDelta( $sql_types );
         $vendor      = sanitize_text_field( $_POST['vendor'] ?? '' );
         $model       = sanitize_text_field( $_POST['model'] ?? '' );
 
+        $prev_row = null;
+        if ( $id > 0 ) {
+            $prev_row = $wpdb->get_row(
+                $wpdb->prepare(
+                    "SELECT fw.*, bt.vendor, bt.model FROM {$fw_table} fw LEFT JOIN {$types_table} bt ON bt.id = fw.box_type_id WHERE fw.id=%d",
+                    $id
+                ),
+                ARRAY_A
+            );
+        }
+
         $errors = array();
         if ( $serial === '' ) { $errors[] = 'מספר סידורי חובה.'; }
 
         // Unique serial validation (excluding trashed)
         if ( $serial !== '' ) {
             $existing = $wpdb->get_var( $wpdb->prepare(
-                "SELECT id FROM {$fw_table} WHERE serial_number=%s AND deleted_at IS NULL AND id != %d LIMIT 1",
+                "SELECT id FROM {$fw_table} WHERE serial_number=%s AND deleted_at IS NULL AND archived_at IS NULL AND id != %d LIMIT 1",
                 $serial, $id
             ) );
             if ( $existing ) {
@@ -543,7 +636,38 @@ if ( $id > 0 ) {
                 set_transient( 'expman_firewalls_errors', array( 'שמירה נכשלה: ' . $wpdb->last_error ), 90 );
                 $this->log_firewall_event( $id, 'update', 'שמירה נכשלה', array( 'error' => $wpdb->last_error ), 'error' );
             } else {
-                $this->log_firewall_event( $id, 'update', 'עודכן רישום חומת אש' );
+                $changes = array();
+                if ( ! empty( $prev_row ) ) {
+                    $fields = array(
+                        array( 'key' => 'customer_number', 'label' => 'מספר לקוח', 'type' => 'text', 'from' => $prev_row['customer_number'] ?? '', 'to' => $customer_number ),
+                        array( 'key' => 'customer_name', 'label' => 'שם לקוח', 'type' => 'text', 'from' => $prev_row['customer_name'] ?? '', 'to' => $customer_name ),
+                        array( 'key' => 'branch', 'label' => 'סניף', 'type' => 'text', 'from' => $prev_row['branch'] ?? '', 'to' => $branch ),
+                        array( 'key' => 'serial_number', 'label' => 'מספר סידורי', 'type' => 'text', 'from' => $prev_row['serial_number'] ?? '', 'to' => $serial ),
+                        array( 'key' => 'is_managed', 'label' => 'ניהול', 'type' => 'bool', 'from' => $prev_row['is_managed'] ?? 0, 'to' => $is_managed ),
+                        array( 'key' => 'track_only', 'label' => 'לקוח למעקב', 'type' => 'bool', 'from' => $prev_row['track_only'] ?? 0, 'to' => $track_only ),
+                        array( 'key' => 'vendor', 'label' => 'יצרן', 'type' => 'text', 'from' => $prev_row['vendor'] ?? '', 'to' => $vendor ),
+                        array( 'key' => 'model', 'label' => 'דגם', 'type' => 'text', 'from' => $prev_row['model'] ?? '', 'to' => $model ),
+                        array( 'key' => 'expiry_date', 'label' => 'תאריך תפוגה', 'type' => 'date', 'from' => $prev_row['expiry_date'] ?? '', 'to' => $expiry ),
+                        array( 'key' => 'access_url', 'label' => 'כתובת גישה', 'type' => 'text', 'from' => $prev_row['access_url'] ?? '', 'to' => $access_url ),
+                        array( 'key' => 'notes', 'label' => 'הערה קבועה', 'type' => 'text', 'from' => $prev_row['notes'] ?? '', 'to' => $notes ),
+                        array( 'key' => 'temp_notice_enabled', 'label' => 'הודעה זמנית פעילה', 'type' => 'bool', 'from' => $prev_row['temp_notice_enabled'] ?? 0, 'to' => $temp_enabled ),
+                        array( 'key' => 'temp_notice', 'label' => 'הודעה זמנית', 'type' => 'text', 'from' => $prev_row['temp_notice'] ?? '', 'to' => $temp_notice ),
+                    );
+
+                    foreach ( $fields as $field ) {
+                        $from = $this->format_log_value( $field['from'], $field['type'] );
+                        $to   = $this->format_log_value( $field['to'], $field['type'] );
+                        if ( $from !== $to ) {
+                            $changes[] = array(
+                                'field' => $field['label'],
+                                'from'  => $from,
+                                'to'    => $to,
+                            );
+                        }
+                    }
+                }
+
+                $this->log_firewall_event( $id, 'update', 'עודכן רישום חומת אש', array( 'changes' => $changes ) );
             }
         } else {
             $data['created_at'] = current_time( 'mysql' );
@@ -566,6 +690,7 @@ if ( $id > 0 ) {
         $secret_new  = isset( $_POST['forticloud_api_secret'] ) ? trim( (string) wp_unslash( $_POST['forticloud_api_secret'] ) ) : '';
 
         $forti_settings = $this->get_forticloud_settings();
+        $prev_settings  = $forti_settings;
         $forti_settings['api_id']    = $api_id;
         $forti_settings['client_id'] = $client_id !== '' ? $client_id : 'assetmanagement';
 
@@ -580,9 +705,31 @@ if ( $id > 0 ) {
 
         $this->update_forticloud_settings( $forti_settings );
         $this->add_notice( 'הגדרות FortiCloud נשמרו.' );
+        $changes = array();
+        $settings_fields = array(
+            array( 'label' => 'FortiCloud API ID', 'from' => $prev_settings['api_id'] ?? '', 'to' => $forti_settings['api_id'] ?? '' ),
+            array( 'label' => 'Client ID', 'from' => $prev_settings['client_id'] ?? '', 'to' => $forti_settings['client_id'] ?? '' ),
+            array( 'label' => 'Base URL', 'from' => $prev_settings['base_url'] ?? '', 'to' => $forti_settings['base_url'] ?? '' ),
+        );
+        foreach ( $settings_fields as $field ) {
+            if ( (string) $field['from'] !== (string) $field['to'] ) {
+                $changes[] = array(
+                    'field' => $field['label'],
+                    'from'  => (string) $field['from'],
+                    'to'    => (string) $field['to'],
+                );
+            }
+        }
+        if ( $secret_new !== '' ) {
+            $changes[] = array(
+                'field' => 'API Secret',
+                'from'  => '***',
+                'to'    => 'עודכן',
+            );
+        }
+
         $this->log_firewall_event( null, 'forticloud_settings', 'הגדרות FortiCloud נשמרו', array(
-            'base_url'   => $forti_settings['base_url'] ?? '',
-            'client_id'  => $forti_settings['client_id'] ?? '',
+            'changes' => $changes,
         ), 'info' );
     }
 
@@ -900,6 +1047,38 @@ if ( $id > 0 ) {
         $this->log_firewall_event( $id, 'restore', 'רישום שוחזר מסל המחזור' );
     }
 
+    private function action_archive_firewall() {
+        global $wpdb;
+        $fw_table = $wpdb->prefix . self::TABLE_FIREWALLS;
+        $id = isset( $_POST['firewall_id'] ) ? intval( $_POST['firewall_id'] ) : 0;
+        if ( $id <= 0 ) { return; }
+
+        $wpdb->update(
+            $fw_table,
+            array( 'archived_at' => current_time( 'mysql' ) ),
+            array( 'id' => $id ),
+            array( '%s' ),
+            array( '%d' )
+        );
+        $this->log_firewall_event( $id, 'archive', 'רישום הועבר לארכיון' );
+    }
+
+    private function action_restore_archive() {
+        global $wpdb;
+        $fw_table = $wpdb->prefix . self::TABLE_FIREWALLS;
+        $id = isset( $_POST['firewall_id'] ) ? intval( $_POST['firewall_id'] ) : 0;
+        if ( $id <= 0 ) { return; }
+
+        $wpdb->update(
+            $fw_table,
+            array( 'archived_at' => null ),
+            array( 'id' => $id ),
+            array( '%s' ),
+            array( '%d' )
+        );
+        $this->log_firewall_event( $id, 'unarchive', 'רישום הוחזר מארכיון' );
+    }
+
     private function action_export_csv() {
         global $wpdb;
         $fw_table    = $wpdb->prefix . self::TABLE_FIREWALLS;
@@ -1058,7 +1237,7 @@ if ( $id > 0 ) {
 
             // Unique serial check (excluding trashed)
             $exists = $wpdb->get_var( $wpdb->prepare(
-                "SELECT id FROM {$fw_table} WHERE serial_number=%s AND deleted_at IS NULL AND id != %d LIMIT 1",
+                "SELECT id FROM {$fw_table} WHERE serial_number=%s AND deleted_at IS NULL AND archived_at IS NULL AND id != %d LIMIT 1",
                 $serial, $id
             ) );
             if ( $exists ) {
@@ -1340,7 +1519,7 @@ if ( $id > 0 ) {
         return $wpdb->get_results( "SELECT id, vendor, model FROM {$types_table} ORDER BY vendor ASC, model ASC" );
     }
 
-    private function get_firewalls_rows( $filters, $orderby, $order, $include_trashed = false, $track_only = 0 ) {
+    private function get_firewalls_rows( $filters, $orderby, $order, $status = 'active', $track_only = null ) {
         global $wpdb;
 
         $fw_table    = $wpdb->prefix . self::TABLE_FIREWALLS;
@@ -1359,6 +1538,7 @@ if ( $id > 0 ) {
             'days_to_renew' => 'days_to_renew',
             'vendor' => 'bt.vendor',
             'model' => 'bt.model',
+            'archived_at' => 'fw.archived_at',
         );
 
         $orderby_sql = isset( $allowed_orderby[ $orderby ] ) ? $allowed_orderby[ $orderby ] : 'fw.expiry_date';
@@ -1367,14 +1547,21 @@ if ( $id > 0 ) {
         $where = "WHERE 1=1";
         $params = array();
 
-        if ( ! $include_trashed ) {
-            $where .= " AND fw.deleted_at IS NULL";
-        } else {
+        if ( $status === 'trash' ) {
             $where .= " AND fw.deleted_at IS NOT NULL";
+        } elseif ( $status === 'archive' ) {
+            $where .= " AND fw.deleted_at IS NULL AND fw.archived_at IS NOT NULL";
+        } else {
+            $where .= " AND fw.deleted_at IS NULL AND fw.archived_at IS NULL";
         }
 
-        $where .= " AND fw.track_only = %d";
-        $params[] = intval( $track_only ) ? 1 : 0;
+        if ( $track_only !== null ) {
+            $where .= " AND fw.track_only = %d";
+            $params[] = intval( $track_only ) ? 1 : 0;
+        } elseif ( $filters['track_only'] !== '' && $filters['track_only'] !== null ) {
+            $where .= " AND fw.track_only = %d";
+            $params[] = intval( $filters['track_only'] ) ? 1 : 0;
+        }
 
         $like_map = array(
             'customer_number' => 'c.customer_number',
@@ -1443,6 +1630,7 @@ if ( $id > 0 ) {
                 fw.notes,
                 fw.temp_notice_enabled,
                 fw.temp_notice,
+                fw.archived_at,
                 fw.deleted_at
             FROM {$fw_table} fw
             LEFT JOIN {$cust_table} c ON c.id = fw.customer_id AND c.is_deleted = 0
@@ -1460,18 +1648,112 @@ if ( $id > 0 ) {
 
     /* ---------------- UI ---------------- */
 
+    private static function get_summary_counts( $option_key ) {
+        global $wpdb;
+        $settings = get_option( $option_key, array() );
+        $yellow   = intval( $settings['yellow_threshold'] ?? 60 );
+        $red      = intval( $settings['red_threshold'] ?? 30 );
+        $fw_table = $wpdb->prefix . self::TABLE_FIREWALLS;
+
+        $counts = $wpdb->get_row(
+            $wpdb->prepare(
+                "SELECT
+                    SUM(CASE WHEN expiry_date IS NOT NULL AND DATEDIFF(expiry_date, CURDATE()) > %d THEN 1 ELSE 0 END) AS green_count,
+                    SUM(CASE WHEN expiry_date IS NOT NULL AND DATEDIFF(expiry_date, CURDATE()) BETWEEN %d AND %d THEN 1 ELSE 0 END) AS yellow_count,
+                    SUM(CASE WHEN expiry_date IS NOT NULL AND DATEDIFF(expiry_date, CURDATE()) <= %d THEN 1 ELSE 0 END) AS red_count,
+                    COUNT(*) AS total_count
+                 FROM {$fw_table}
+                 WHERE deleted_at IS NULL AND archived_at IS NULL",
+                $yellow,
+                $red + 1,
+                $yellow,
+                $red
+            ),
+            ARRAY_A
+        );
+
+        $archived = $wpdb->get_var( "SELECT COUNT(*) FROM {$fw_table} WHERE deleted_at IS NULL AND archived_at IS NOT NULL" );
+
+        return array(
+            'green'   => intval( $counts['green_count'] ?? 0 ),
+            'yellow'  => intval( $counts['yellow_count'] ?? 0 ),
+            'red'     => intval( $counts['red_count'] ?? 0 ),
+            'total'   => intval( $counts['total_count'] ?? 0 ),
+            'archived'=> intval( $archived ),
+            'yellow_threshold' => $yellow,
+            'red_threshold'    => $red,
+        );
+    }
+
+    public static function render_summary_cards_public( $option_key, $title = '' ) {
+        $data = self::get_summary_counts( $option_key );
+        self::render_summary_cards_markup( $data, $title );
+    }
+
+    private function render_summary_cards( $title = '' ) {
+        $data = self::get_summary_counts( $this->option_key );
+        self::render_summary_cards_markup( $data, $title );
+    }
+
+    private static function render_summary_cards_markup( $data, $title = '' ) {
+        static $summary_css_done = false;
+        if ( ! $summary_css_done ) {
+            echo '<style>
+            .expman-summary{display:flex;gap:12px;flex-wrap:wrap;align-items:stretch;margin:14px 0;}
+            .expman-summary-card{flex:1 1 160px;border-radius:10px;padding:10px 12px;border:1px solid #d9e3f2;background:#fff;min-width:160px;}
+            .expman-summary-card h4{margin:0 0 6px;font-size:14px;color:#2b3f5c;}
+            .expman-summary-card .count{font-size:22px;font-weight:700;color:#183153;}
+            .expman-summary-card.green{background:#ecfbf4;border-color:#bfead4;}
+            .expman-summary-card.yellow{background:#fff4e7;border-color:#ffd3a6;}
+            .expman-summary-card.red{background:#ffecec;border-color:#f3b6b6;}
+            .expman-summary-meta{margin-top:8px;padding:8px 12px;border-radius:10px;border:1px solid #d9e3f2;background:#f8fafc;font-weight:600;color:#2b3f5c;}
+            </style>';
+            $summary_css_done = true;
+        }
+
+        if ( $title !== '' ) {
+            echo '<h3 style="margin-bottom:6px;">' . esc_html( $title ) . '</h3>';
+        }
+
+        $yellow_label = 'עד ' . intval( $data['yellow_threshold'] ) . ' ימים';
+
+        echo '<div class="expman-summary">';
+        echo '<div class="expman-summary-card green"><h4>תוקף מעל ' . esc_html( $data['yellow_threshold'] ) . ' יום</h4><div class="count">' . esc_html( $data['green'] ) . '</div></div>';
+        echo '<div class="expman-summary-card yellow"><h4>' . esc_html( $yellow_label ) . '</h4><div class="count">' . esc_html( $data['yellow'] ) . '</div></div>';
+        echo '<div class="expman-summary-card red"><h4>דורש טיפול מייד</h4><div class="count">' . esc_html( $data['red'] ) . '</div></div>';
+        echo '</div>';
+        echo '<div class="expman-summary-meta">סה״כ רשומות פעילות: ' . esc_html( $data['total'] ) . ' | בארכיון: ' . esc_html( $data['archived'] ) . '</div>';
+    }
+
     private function render() {
         $errors = get_transient( 'expman_firewalls_errors' );
         delete_transient( 'expman_firewalls_errors' );
 
         echo '<style>/* expman-compact-fields */
-.expman-filter-row input,.expman-filter-row select{height:20px !important;padding:2px 6px !important;font-size:12px !important;}
+.expman-filter-row input,.expman-filter-row select{height:24px !important;padding:4px 6px !important;font-size:12px !important;border:1px solid #c7d1e0;border-radius:4px;background:#fff;}
+.expman-filter-row th{background:#e8f0fb !important;border-bottom:2px solid #c7d1e0;}
 .fw-form input,.fw-form select{height:24px !important;padding:3px 6px !important;font-size:13px !important;}
 .fw-form textarea{min-height:60px !important;font-size:13px !important;}
-.expman-btn{padding:6px 10px !important;font-size:12px !important;}
+.expman-btn{padding:6px 12px !important;font-size:12px !important;border-radius:6px;border:1px solid #254d8c;background:#2f5ea8;color:#fff;display:inline-block;line-height:1.2;box-shadow:0 1px 0 rgba(0,0,0,0.05);cursor:pointer;text-decoration:none;}
+.expman-btn:hover{background:#264f8f;color:#fff;}
+.expman-btn.secondary{background:#eef3fb;border-color:#9fb3d9;color:#1f3b64;}
+.expman-btn.secondary:hover{background:#dfe9f7;color:#1f3b64;}
 .expman-btn-clear{background:transparent;border:0;box-shadow:none;padding:0 !important;color:#2271b1;cursor:pointer;}
 .expman-btn-clear:hover{text-decoration:underline;}
 .expman-highlight{background:#fff7c0 !important;}
+.expman-frontend .widefat{border:1px solid #c7d1e0;border-radius:8px;overflow:hidden;background:#fff;}
+.expman-frontend .widefat{table-layout:fixed;width:100%;}
+.expman-frontend .widefat thead th{background:#2f5ea8;color:#fff;border-bottom:2px solid #244b86;padding:8px;}
+.expman-frontend .widefat thead th a{color:#fff;}
+.expman-frontend .widefat tbody td{padding:8px;border-bottom:1px solid #e3e7ef;}
+.expman-frontend .widefat th,.expman-frontend .widefat td{text-align:right;vertical-align:middle;}
+.expman-row-alt td{background:#f6f8fc;}
+.expman-inline-form td{border-top:1px solid #e3e7ef;}
+.expman-details td{border-top:1px solid #e3e7ef;background:#f4f6fb;}
+.expman-frontend .button,.expman-frontend .button.button-primary{border-radius:6px;border:1px solid #254d8c;background:#2f5ea8;color:#fff;box-shadow:0 1px 0 rgba(0,0,0,0.05);padding:6px 12px;height:auto;}
+.expman-frontend .button:not(.button-primary){background:#eef3fb;border-color:#9fb3d9;color:#1f3b64;}
+.expman-frontend .button:hover,.expman-frontend .button.button-primary:hover{background:#264f8f;color:#fff;}
+.expman-frontend .button:not(.button-primary):hover{background:#dfe9f7;color:#1f3b64;}
 </style>';
 echo '<style>.expman-frontend.expman-firewalls input,.expman-frontend.expman-firewalls select{height:28px!important;line-height:28px!important;padding:2px 6px!important;font-size:13px!important}.expman-frontend.expman-firewalls textarea{min-height:60px!important;font-size:13px!important;padding:6px!important}.expman-frontend.expman-firewalls .button{padding:4px 10px!important;height:30px!important}</style>';
         echo '<div class="expman-frontend expman-firewalls" style="direction:rtl;">';
@@ -1481,6 +1763,7 @@ echo '<style>.expman-frontend.expman-firewalls input,.expman-frontend.expman-fir
         }
 
         echo '<h2 style="margin-top:10px;">חומות אש</h2>';
+        $this->render_summary_cards();
 
         if ( ! empty( $errors ) ) {
             echo '<div class="notice notice-error"><p>' . esc_html( implode( ' | ', (array) $errors ) ) . '</p></div>';
@@ -1515,6 +1798,10 @@ echo '<style>.expman-frontend.expman-firewalls input,.expman-frontend.expman-fir
         $this->render_trash_tab();
         echo '</div>';
 
+        echo '<div data-expman-panel="archive"' . ( $active === 'archive' ? '' : ' style="display:none;"' ) . '>';
+        $this->render_archive_tab();
+        echo '</div>';
+
         echo '<div data-expman-panel="logs"' . ( $active === 'logs' ? '' : ' style="display:none;"' ) . '>';
         $this->render_logs_tab();
         echo '</div>';
@@ -1533,13 +1820,20 @@ echo '<style>.expman-frontend.expman-firewalls input,.expman-frontend.expman-fir
             'settings' => 'הגדרות',
             'logs'     => 'לוגים',
             'trash'    => 'סל מחזור',
+            'archive'  => 'ארכיון',
         );
 
-        echo '<div class="expman-internal-tabs" style="display:flex;gap:10px;flex-wrap:wrap;justify-content:flex-end;margin:10px 0">';
+        echo '<style>
+        .expman-internal-tabs{display:flex;gap:10px;flex-wrap:wrap;justify-content:flex-end;margin:10px 0;padding:8px;border-radius:10px;background:#f4f7fb;border:1px solid #d9e3f2;}
+        .expman-internal-tabs .expman-tab-btn{display:inline-block;padding:8px 14px;border-radius:8px;border:1px solid #9fb3d9;text-decoration:none;font-weight:700;background:#eef3fb;color:#1f3b64;}
+        .expman-internal-tabs .expman-tab-btn[data-active="1"]{background:#2f5ea8;color:#fff;border-color:#2f5ea8;}
+        </style>';
+
+        echo '<div class="expman-internal-tabs">';
         foreach ( $tabs as $k => $label ) {
             $is = ( $k === $active ) ? '1' : '0';
             $href = add_query_arg( 'tab', $k, remove_query_arg( 'tab' ) );
-            echo '<a href="' . esc_url( $href ) . '" class="expman-tab-btn" data-expman-tab="' . esc_attr( $k ) . '" data-active="' . esc_attr( $is ) . '" style="background:#2f5ea8;color:#fff;text-decoration:none;padding:10px 14px;border-radius:6px;display:inline-block;font-weight:700;">' . esc_html( $label ) . '</a>';
+            echo '<a href="' . esc_url( $href ) . '" class="expman-tab-btn" data-expman-tab="' . esc_attr( $k ) . '" data-active="' . esc_attr( $is ) . '">' . esc_html( $label ) . '</a>';
         }
         echo '</div>';
 
@@ -1568,6 +1862,7 @@ echo '<style>.expman-frontend.expman-firewalls input,.expman-frontend.expman-fir
             'branch'          => sanitize_text_field( $_GET['f_branch'] ?? '' ),
             'serial_number'   => sanitize_text_field( $_GET['f_serial_number'] ?? '' ),
             'is_managed'      => isset( $_GET['f_is_managed'] ) ? sanitize_text_field( $_GET['f_is_managed'] ) : '',
+            'track_only'      => isset( $_GET['f_track_only'] ) ? sanitize_text_field( $_GET['f_track_only'] ) : '',
             'vendor'          => sanitize_text_field( $_GET['f_vendor'] ?? '' ),
             'model'           => sanitize_text_field( $_GET['f_model'] ?? '' ),
             'expiry_date'     => sanitize_text_field( $_GET['f_expiry_date'] ?? '' ),
@@ -1581,7 +1876,7 @@ echo '<style>.expman-frontend.expman-firewalls input,.expman-frontend.expman-fir
 
         $base = remove_query_arg( array( 'expman_msg' ) );
         $clear_url = remove_query_arg( array(
-            'f_customer_number','f_customer_name','f_branch','f_serial_number','f_is_managed','f_vendor','f_model','f_expiry_date','orderby','order','highlight'
+            'f_customer_number','f_customer_name','f_branch','f_serial_number','f_is_managed','f_track_only','f_vendor','f_model','f_expiry_date','orderby','order','highlight'
         ), $base );
 
         echo '<div style="display:flex;gap:10px;justify-content:flex-end;flex-wrap:wrap;margin:10px 0;">';
@@ -1593,15 +1888,9 @@ echo '<style>.expman-frontend.expman-firewalls input,.expman-frontend.expman-fir
         $this->render_form( 0 );
         echo '</div>';
 
-        // Main list (track_only = 0)
         echo '<h3>רשימה ראשית</h3>';
-        $rows = $this->get_firewalls_rows( $filters, $orderby, $order, false, 0 );
-        $this->render_table( $rows, $filters, $orderby, $order, false, $clear_url );
-
-        // Tracking list (track_only = 1)
-        echo '<h3 style="margin-top:18px;">לקוחות למעקב (לא שולח התראות)</h3>';
-        $rows_track = $this->get_firewalls_rows( $filters, $orderby, $order, false, 1 );
-        $this->render_table( $rows_track, $filters, $orderby, $order, false, $clear_url, true );
+        $rows = $this->get_firewalls_rows( $filters, $orderby, $order, 'active', null );
+        $this->render_table( $rows, $filters, $orderby, $order, 'active', $clear_url );
 
         // Import/Export at bottom
         echo '<div style="margin-top:18px;border-top:1px solid #eee;padding-top:12px;">';
@@ -1787,14 +2076,25 @@ echo '<style>.expman-frontend.expman-firewalls input,.expman-frontend.expman-fir
         $order   = sanitize_key( $_GET['order'] ?? 'DESC' );
 
         echo '<h3>סל מחזור (חומות אש)</h3>';
-        $rows = $this->get_firewalls_rows( $filters, $orderby, $order, true, 0 );
-        $this->render_table( $rows, $filters, $orderby, $order, true, null );
+        $rows = $this->get_firewalls_rows( $filters, $orderby, $order, 'trash', null );
+        $this->render_table( $rows, $filters, $orderby, $order, 'trash', null );
+    }
+
+    private function render_archive_tab() {
+        $filters = $this->common_filters_from_get();
+        $orderby = sanitize_key( $_GET['orderby'] ?? 'archived_at' );
+        $order   = sanitize_key( $_GET['order'] ?? 'DESC' );
+
+        echo '<h3>ארכיון (חומות אש)</h3>';
+        $rows = $this->get_firewalls_rows( $filters, $orderby, $order, 'archive', null );
+        $this->render_table( $rows, $filters, $orderby, $order, 'archive', null );
     }
 
     private function render_logs_tab() {
         global $wpdb;
         $logs_table = $wpdb->prefix . self::TABLE_FIREWALL_LOGS;
-        $logs = $wpdb->get_results( "SELECT * FROM {$logs_table} ORDER BY id DESC LIMIT 200" );
+        $fw_table = $wpdb->prefix . self::TABLE_FIREWALLS;
+        $logs = $wpdb->get_results( "SELECT l.*, fw.customer_name, fw.serial_number FROM {$logs_table} l LEFT JOIN {$fw_table} fw ON fw.id = l.firewall_id ORDER BY l.id DESC LIMIT 200" );
 
         echo '<h3>לוגים (חומות אש)</h3>';
         echo '<p style="color:#555;">מציג 200 רשומות אחרונות של יצירה, עדכון, מחיקה וסנכרון.</p>';
@@ -1809,21 +2109,24 @@ echo '<style>.expman-frontend.expman-firewalls input,.expman-frontend.expman-fir
         echo '<th>זמן</th>';
         echo '<th>פעולה</th>';
         echo '<th>רמה</th>';
-        echo '<th>ID חומת אש</th>';
+        echo '<th>שם לקוח</th>';
+        echo '<th>מספר סידורי</th>';
         echo '<th>הודעה</th>';
         echo '<th>פרטים</th>';
         echo '</tr></thead><tbody>';
 
         foreach ( $logs as $log ) {
-            $context = '';
-            if ( ! empty( $log->context ) ) {
-                $context = '<pre style="white-space:pre-wrap;margin:0;">' . esc_html( $log->context ) . '</pre>';
+            $context = $this->format_log_context( $log->context ?? '' );
+            $created_at = '';
+            if ( ! empty( $log->created_at ) ) {
+                $created_at = date_i18n( 'd/m/Y H:i', strtotime( $log->created_at ) );
             }
             echo '<tr>';
-            echo '<td>' . esc_html( $log->created_at ) . '</td>';
+            echo '<td>' . esc_html( $created_at ) . '</td>';
             echo '<td>' . esc_html( $log->action ) . '</td>';
             echo '<td>' . esc_html( $log->level ) . '</td>';
-            echo '<td>' . esc_html( $log->firewall_id ) . '</td>';
+            echo '<td>' . esc_html( $log->customer_name ?? '' ) . '</td>';
+            echo '<td>' . esc_html( $log->serial_number ?? '' ) . '</td>';
             echo '<td>' . esc_html( $log->message ) . '</td>';
             echo '<td>' . $context . '</td>';
             echo '</tr>';
@@ -1842,10 +2145,10 @@ echo '<style>.expman-frontend.expman-firewalls input,.expman-frontend.expman-fir
         return $vals;
     }
 
-    private function render_table( $rows, $filters, $orderby, $order, $is_trash, $clear_url = null, $is_tracking_table = false ) {
+    private function render_table( $rows, $filters, $orderby, $order, $table_mode, $clear_url = null ) {
         $base = remove_query_arg( array( 'expman_msg' ) );
         $uid  = wp_generate_uuid4();
-        $show_filters = ! $is_tracking_table;
+        $show_filters = true;
 
         if ( $show_filters ) {
             echo '<form method="get" style="margin:0 0 10px 0;">';
@@ -1953,6 +2256,7 @@ echo '<style>.expman-frontend.expman-firewalls input,.expman-frontend.expman-fir
         $this->th_sort( 'vendor', 'יצרן', $orderby, $order, $base );
         $this->th_sort( 'model', 'דגם', $orderby, $order, $base );
         $this->th_sort( 'is_managed', 'ניהול', $orderby, $order, $base );
+        $this->th_sort( 'track_only', 'מעקב', $orderby, $order, $base );
         echo '<th>גישה</th>';
         echo '<th>פעולות</th>';
         echo '</tr>';
@@ -1972,6 +2276,11 @@ echo '<style>.expman-frontend.expman-firewalls input,.expman-frontend.expman-fir
             echo '<option value="1" ' . selected( $filters['is_managed'], '1', false ) . '>שלנו</option>';
             echo '<option value="0" ' . selected( $filters['is_managed'], '0', false ) . '>לא שלנו</option>';
             echo '</select></th>';
+            echo '<th><select name="f_track_only" style="width:100%;">';
+            echo '<option value="">הכל</option>';
+            echo '<option value="1" ' . selected( $filters['track_only'], '1', false ) . '>כן</option>';
+            echo '<option value="0" ' . selected( $filters['track_only'], '0', false ) . '>לא</option>';
+            echo '</select></th>';
             echo '<th></th>'; // access
             echo '<th style="white-space:nowrap;">';
             echo '<button class="expman-btn secondary" type="submit">סנן</button> ';
@@ -1985,14 +2294,16 @@ echo '<style>.expman-frontend.expman-firewalls input,.expman-frontend.expman-fir
         echo '</thead><tbody>';
 
         if ( empty( $rows ) ) {
-            echo '<tr><td colspan="10">אין נתונים.</td></tr></tbody></table>';
+            echo '<tr><td colspan="11">אין נתונים.</td></tr></tbody></table>';
             if ( $show_filters ) {
                 echo '</form>';
             }
             return;
         }
 
+        $row_index = 0;
         foreach ( (array) $rows as $r ) {
+            $row_index++;
             $days = is_null( $r->days_to_renew ) ? '' : intval( $r->days_to_renew );
 
             $access_btn = '';
@@ -2008,7 +2319,8 @@ echo '<style>.expman-frontend.expman-firewalls input,.expman-frontend.expman-fir
             if ( ! empty( $_GET['highlight'] ) && (string) $r->serial_number === (string) sanitize_text_field( wp_unslash( $_GET['highlight'] ) ) ) {
                 $highlight = ' expman-highlight';
             }
-            echo '<tr class="expman-row' . esc_attr( $highlight ) . '" style="cursor:pointer;">';
+            $alt_class = ( $row_index % 2 === 0 ) ? ' expman-row-alt' : '';
+            echo '<tr class="expman-row' . esc_attr( $highlight . $alt_class ) . '" style="cursor:pointer;">';
                         echo '<td>' . esc_html( $r->customer_number ?? '' ) . '</td>';
             echo '<td>' . esc_html( $r->customer_name ?? '' ) . '</td>';
             echo '<td>' . esc_html( $r->branch ?? '' ) . '</td>';
@@ -2017,12 +2329,26 @@ echo '<style>.expman-frontend.expman-firewalls input,.expman-frontend.expman-fir
             echo '<td>' . esc_html( $r->vendor ?? '' ) . '</td>';
             echo '<td>' . esc_html( $r->model ?? '' ) . '</td>';
             echo '<td>' . esc_html( $managed_label ) . '</td>';
+            echo '<td>' . esc_html( intval( $r->track_only ) ? 'כן' : 'לא' ) . '</td>';
             echo '<td>' . $access_btn . '</td>';
 
             echo '<td style="white-space:nowrap;" onclick="event.stopPropagation();">';
             echo '<a href="#" class="expman-btn expman-edit-btn" style="text-decoration:none;padding:6px 10px;" data-id="' . esc_attr( $r->id ) . '">עריכה</a> ';
-            if ( ! $is_trash ) {
+            if ( $table_mode === 'trash' ) {
                 echo '<form method="post" style="display:inline;">';
+                wp_nonce_field( 'expman_firewalls' );
+                echo '<input type="hidden" name="expman_action" value="restore_firewall">';
+                echo '<input type="hidden" name="firewall_id" value="' . esc_attr( $r->id ) . '">';
+                echo '<button class="expman-btn secondary" type="submit" style="padding:6px 10px;">שחזור</button>';
+                echo '</form>';
+            } elseif ( $table_mode === 'archive' ) {
+                echo '<form method="post" style="display:inline;">';
+                wp_nonce_field( 'expman_firewalls' );
+                echo '<input type="hidden" name="expman_action" value="restore_archive">';
+                echo '<input type="hidden" name="firewall_id" value="' . esc_attr( $r->id ) . '">';
+                echo '<button class="expman-btn secondary" type="submit" style="padding:6px 10px;">שחזור</button>';
+                echo '</form>';
+                echo '<form method="post" style="display:inline;margin-right:6px;">';
                 wp_nonce_field( 'expman_firewalls' );
                 echo '<input type="hidden" name="expman_action" value="trash_firewall">';
                 echo '<input type="hidden" name="firewall_id" value="' . esc_attr( $r->id ) . '">';
@@ -2031,9 +2357,9 @@ echo '<style>.expman-frontend.expman-firewalls input,.expman-frontend.expman-fir
             } else {
                 echo '<form method="post" style="display:inline;">';
                 wp_nonce_field( 'expman_firewalls' );
-                echo '<input type="hidden" name="expman_action" value="restore_firewall">';
+                echo '<input type="hidden" name="expman_action" value="trash_firewall">';
                 echo '<input type="hidden" name="firewall_id" value="' . esc_attr( $r->id ) . '">';
-                echo '<button class="expman-btn secondary" type="submit" style="padding:6px 10px;">שחזור</button>';
+                echo '<button class="expman-btn secondary" type="submit" style="padding:6px 10px;" onclick="return confirm(\'להעביר ל־Trash?\');">Trash</button>';
                 echo '</form>';
             }
             echo '</td>';
@@ -2041,13 +2367,13 @@ echo '<style>.expman-frontend.expman-firewalls input,.expman-frontend.expman-fir
 
             // Inline edit form row (hidden)
             echo '<tr class="expman-inline-form" data-for="' . esc_attr( $r->id ) . '" style="display:none;background:#fff;">';
-            echo '<td colspan="10">';
+            echo '<td colspan="11">';
             $this->render_form( intval( $r->id ), $r );
             echo '</td></tr>';
 
             // Details row (click row expands)
             echo '<tr class="expman-details" data-for="' . esc_attr( $r->id ) . '" style="display:none;background:#fafafa;">';
-            echo '<td colspan="10">';
+            echo '<td colspan="11">';
             echo '<div style="display:flex;gap:20px;flex-wrap:wrap;">';
             echo '<div style="min-width:260px;"><strong>הערה קבועה:</strong><div style="white-space:pre-wrap;">' . esc_html( (string) $r->notes ) . '</div></div>';
             echo '<div style="min-width:260px;"><strong>הודעה זמנית:</strong><div style="white-space:pre-wrap;">' . esc_html( intval( $r->temp_notice_enabled ) ? (string) $r->temp_notice : '' ) . '</div></div>';
@@ -2135,7 +2461,6 @@ echo '<style>.expman-frontend.expman-firewalls input,.expman-frontend.expman-fir
 
         echo '<form method="post" class="expman-fw-form" style="margin:0;">';
         wp_nonce_field( 'expman_firewalls' );
-        echo '<input type="hidden" name="expman_action" value="save_firewall">';
         echo '<input type="hidden" name="firewall_id" value="' . esc_attr( $id ) . '">';
         echo '<input type="hidden" name="customer_id" class="customer_id" value="' . esc_attr( $row['customer_id'] ) . '">';
 
@@ -2183,8 +2508,11 @@ echo '<style>.expman-frontend.expman-firewalls input,.expman-frontend.expman-fir
         echo '</div>'; // grid
 
         echo '<div class="expman-fw-actions">';
-        echo '<button type="submit" class="button button-primary">שמירה</button>
-                    <button type="button" class="button" data-expman-cancel-new>ביטול</button>';
+        echo '<button type="submit" name="expman_action" value="save_firewall" class="button button-primary">שמירה</button>';
+        if ( $id > 0 ) {
+            echo '<button type="submit" name="expman_action" value="archive_firewall" class="button" onclick="return confirm(\'להעביר לארכיון?\');">העבר לארכיון</button>';
+        }
+        echo '<button type="button" class="button" data-expman-cancel-new>ביטול</button>';
         echo '</div>';
 
         echo '</form>';

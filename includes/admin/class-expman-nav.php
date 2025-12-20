@@ -106,18 +106,16 @@ class Expman_Nav {
             'domains' => 'דומיינים',
             'servers' => 'שרתים',
             'customers' => 'לקוחות',
-            'trash' => 'Trash',
-            'logs' => 'Logs',
             'settings' => 'Settings',
         );
 
         echo '<style>
-        .expman-top-nav{width:100%;box-sizing:border-box;margin:10px 0;padding:10px;border:1px solid #e3e3e3;border-radius:10px;background:#fff;}
+        .expman-top-nav{width:100%;box-sizing:border-box;margin:10px 0;padding:12px;border:1px solid #d5deeb;border-radius:12px;background:linear-gradient(180deg,#f7f9fc,#eef3fb);}
         .expman-top-nav ul{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;}
         .expman-top-nav li{margin:0;}
-        .expman-top-nav a.expman-nav-btn{display:flex;justify-content:center;align-items:center;width:100%;padding:10px 10px;border:0;border-radius:20px;text-decoration:none;font-weight:700;background:#cfcfcf;color:#111}
-        .expman-top-nav a.expman-nav-btn:hover{filter:brightness(.95)}
-        .expman-top-nav a.expman-nav-btn.is-disabled{pointer-events:none;opacity:.55}
+        .expman-top-nav a.expman-nav-btn{display:flex;justify-content:center;align-items:center;width:100%;padding:10px 12px;border:1px solid #9fb3d9;border-radius:20px;text-decoration:none;font-weight:700;background:#2f5ea8;color:#fff;transition:background .15s ease,border-color .15s ease,transform .15s ease}
+        .expman-top-nav a.expman-nav-btn:hover{background:#264f8f;border-color:#264f8f;transform:translateY(-1px)}
+        .expman-top-nav a.expman-nav-btn.is-disabled{pointer-events:none;opacity:.5;background:#c9d3e6;color:#42536b;border-color:#b9c5d8}
         </style>';
 
         echo '<nav class="expman-top-nav" aria-label="Expiry Manager Navigation"><ul>';
