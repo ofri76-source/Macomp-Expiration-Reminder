@@ -195,6 +195,14 @@ class Expman_Firewalls_Page {
                 $this->action_assign_import_stage_bulk();
                 $redirect_tab = 'assign';
                 break;
+            case 'delete_import_stage':
+                $this->action_delete_import_stage();
+                $redirect_tab = 'assign';
+                break;
+            case 'save_vendor_contacts':
+                $this->action_save_vendor_contacts();
+                $redirect_tab = 'settings';
+                break;
         }
 
         $redirect_url = remove_query_arg( array( 'expman_msg' ) );
@@ -262,6 +270,14 @@ class Expman_Firewalls_Page {
 
     private function action_assign_import_stage_bulk() {
         $this->actions->action_assign_import_stage_bulk();
+    }
+
+    private function action_delete_import_stage() {
+        $this->actions->action_delete_import_stage();
+    }
+
+    private function action_save_vendor_contacts() {
+        $this->actions->action_save_vendor_contacts();
     }
 
     private function render() {

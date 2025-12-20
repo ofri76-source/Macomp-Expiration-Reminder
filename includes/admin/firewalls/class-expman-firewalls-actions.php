@@ -693,6 +693,7 @@ class Expman_Firewalls_Actions {
                 fw.is_managed,
                 fw.track_only,
                 fw.expiry_date,
+                fw.created_at,
                 DATEDIFF(fw.expiry_date, CURDATE()) AS days_to_renew,
                 bt.vendor,
                 bt.model,
@@ -771,7 +772,7 @@ class Expman_Firewalls_Actions {
         }
         return $wpdb->get_results(
             $wpdb->prepare(
-                "SELECT * FROM {$stage_table} WHERE import_batch_id=%s ORDER BY id ASC",
+                "SELECT * FROM {$stage_table} WHERE import_batch_id=%s AND status IN ('pending','failed') ORDER BY id ASC",
                 $batch_id
             )
         );
@@ -816,6 +817,64 @@ class Expman_Firewalls_Actions {
         if ( ! empty( $failures ) ) {
             set_transient( 'expman_firewalls_assign_failures', $failures, 300 );
         }
+    }
+
+    public function action_delete_import_stage() {
+        global $wpdb;
+        $stage_table = $wpdb->prefix . Expman_Firewalls_Page::TABLE_FIREWALL_IMPORT_STAGE;
+        $stage_id = intval( $_POST['stage_id'] ?? 0 );
+        if ( $stage_id <= 0 ) {
+            return;
+        }
+
+        $batch_id = sanitize_text_field( $_POST['batch'] ?? '' );
+        $ok = $wpdb->delete( $stage_table, array( 'id' => $stage_id ), array( '%d' ) );
+        if ( $ok === false ) {
+            $this->logger->log_firewall_event( null, 'import_stage_delete', 'מחיקת שורת שיוך נכשלה', array(
+                'stage_id'   => $stage_id,
+                'batch_id'   => $batch_id,
+                'last_error' => $wpdb->last_error,
+            ), 'error' );
+            set_transient( 'expman_firewalls_errors', array( 'מחיקה נכשלה: ' . $wpdb->last_error ), 90 );
+            return;
+        }
+
+        $this->logger->log_firewall_event( null, 'import_stage_delete', 'שורת שיוך נמחקה', array(
+            'stage_id' => $stage_id,
+            'batch_id' => $batch_id,
+        ), 'info' );
+    }
+
+    public function save_vendor_contacts() {
+        $names  = $_POST['vendor_contact_name'] ?? array();
+        $emails = $_POST['vendor_contact_email'] ?? array();
+        $contacts = array();
+        foreach ( (array) $names as $idx => $name ) {
+            $name = sanitize_text_field( $name );
+            $email = sanitize_email( $emails[ $idx ] ?? '' );
+            if ( $name === '' && $email === '' ) {
+                continue;
+            }
+            $contacts[] = array(
+                'name'  => $name,
+                'email' => $email,
+            );
+        }
+
+        $settings = get_option( $this->option_key, array() );
+        $settings['vendor_contacts'] = $contacts;
+        update_option( $this->option_key, $settings );
+    }
+
+    public function action_save_vendor_contacts() {
+        $this->save_vendor_contacts();
+        set_transient( 'expman_firewalls_errors', array( 'פרטי ספק נשמרו.' ), 90 );
+    }
+
+    public function get_vendor_contacts() {
+        $settings = get_option( $this->option_key, array() );
+        $contacts = $settings['vendor_contacts'] ?? array();
+        return is_array( $contacts ) ? $contacts : array();
     }
 
     private function assign_stage_row( $stage_id, $input, $batch_override = '' ) {

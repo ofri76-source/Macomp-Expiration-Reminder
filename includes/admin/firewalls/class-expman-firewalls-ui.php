@@ -88,6 +88,8 @@ class Expman_Firewalls_UI {
 .expman-days-green{background:#ecfbf4;}
 .expman-days-yellow{background:#fff4e7;}
 .expman-days-red{background:#ffecec;}
+.expman-center{text-align:center !important;}
+.expman-serial-col{width:16ch;}
 </style>';
         echo '<style>.expman-frontend.expman-firewalls input,.expman-frontend.expman-firewalls select{height:28px!important;line-height:28px!important;padding:2px 6px!important;font-size:13px!important}.expman-frontend.expman-firewalls textarea{min-height:60px!important;font-size:13px!important;padding:6px!important}.expman-frontend.expman-firewalls .button{padding:4px 10px!important;height:30px!important}</style>';
         echo '<div class="expman-frontend expman-firewalls" style="direction:rtl;">';
@@ -533,6 +535,14 @@ class Expman_Firewalls_UI {
                 echo '<div style="margin-top:6px;color:#b32d2e;font-size:12px;">' . esc_html( $row->last_error ) . '</div>';
             }
             echo '</form>';
+            echo '<form method="post" style="margin-top:6px;">';
+            wp_nonce_field( 'expman_firewalls' );
+            echo '<input type="hidden" name="expman_action" value="delete_import_stage">';
+            echo '<input type="hidden" name="tab" value="assign">';
+            echo '<input type="hidden" name="batch" value="' . esc_attr( $batch_id ) . '">';
+            echo '<input type="hidden" name="stage_id" value="' . esc_attr( $row->id ) . '">';
+            echo '<button class="button" type="submit" onclick="return confirm(\'למחוק שורת שיוך?\');">מחיקה</button>';
+            echo '</form>';
             echo '</td>';
             echo '</tr>';
         }
@@ -649,6 +659,33 @@ class Expman_Firewalls_UI {
 
         $actions = $this->page->get_actions();
         $types = $actions->get_box_types();
+        $vendor_contacts = $actions->get_vendor_contacts();
+
+        echo '<hr style="margin:24px 0;">';
+        echo '<h3>פרטי ספק</h3>';
+        echo '<form method="post" style="max-width:680px;">';
+        wp_nonce_field( 'expman_firewalls' );
+        echo '<input type="hidden" name="expman_action" value="save_vendor_contacts">';
+        echo '<input type="hidden" name="tab" value="settings">';
+        echo '<table class="widefat striped" style="margin-top:10px;">';
+        echo '<thead><tr><th>שם איש קשר</th><th>מייל</th></tr></thead><tbody>';
+        if ( empty( $vendor_contacts ) ) {
+            $vendor_contacts = array( array( 'name' => '', 'email' => '' ) );
+        }
+        foreach ( $vendor_contacts as $contact ) {
+            echo '<tr>';
+            echo '<td><input type="text" name="vendor_contact_name[]" value="' . esc_attr( $contact['name'] ?? '' ) . '" style="width:100%;"></td>';
+            echo '<td><input type="email" name="vendor_contact_email[]" value="' . esc_attr( $contact['email'] ?? '' ) . '" style="width:100%;"></td>';
+            echo '</tr>';
+        }
+        echo '<tr>';
+        echo '<td><input type="text" name="vendor_contact_name[]" placeholder="שם חדש" style="width:100%;"></td>';
+        echo '<td><input type="email" name="vendor_contact_email[]" placeholder="email@example.com" style="width:100%;"></td>';
+        echo '</tr>';
+        echo '</tbody></table>';
+        echo '<p style="margin-top:10px;"><button type="submit" class="button button-primary">שמירה</button></p>';
+        echo '</form>';
+
         echo '<hr style="margin:24px 0;">';
         echo '<h3>טבלת יצרן ודגם</h3>';
         echo '<form method="post" style="max-width:680px;">';
@@ -754,6 +791,7 @@ class Expman_Firewalls_UI {
 
     private function render_table( $rows, $filters, $orderby, $order, $table_mode, $clear_url = null, $options = array() ) {
         $actions = $this->page->get_actions();
+        $vendor_contacts = $actions->get_vendor_contacts();
         $summary = $actions->get_summary_counts( $this->page->get_option_key() );
         $yellow_threshold = intval( $summary['yellow_threshold'] ?? 60 );
         $red_threshold = intval( $summary['red_threshold'] ?? 30 );
@@ -887,15 +925,15 @@ class Expman_Firewalls_UI {
         $this->th_sort( 'customer_number', 'מספר לקוח', $orderby, $order, $base );
         $this->th_sort( 'customer_name', 'שם לקוח', $orderby, $order, $base );
         $this->th_sort( 'branch', 'סניף', $orderby, $order, $base );
-        $this->th_sort( 'serial_number', 'מספר סידורי', $orderby, $order, $base, 'expman-align-left' );
-        $this->th_sort( 'days_to_renew', 'ימים לחידוש', $orderby, $order, $base, 'expman-align-left' );
+        $this->th_sort( 'serial_number', 'מספר סידורי', $orderby, $order, $base, 'expman-align-left expman-serial-col' );
+        $this->th_sort( 'days_to_renew', 'ימים לחידוש', $orderby, $order, $base, 'expman-center' );
         $this->th_sort( 'vendor', 'יצרן', $orderby, $order, $base, 'expman-align-left' );
         $this->th_sort( 'model', 'דגם', $orderby, $order, $base, 'expman-align-left' );
         if ( $show_status_cols ) {
             $this->th_sort( 'is_managed', 'ניהול', $orderby, $order, $base );
             $this->th_sort( 'track_only', 'מעקב', $orderby, $order, $base );
         }
-        echo '<th>גישה</th>';
+        echo '<th>URL</th>';
         echo '<th>פעולות</th>';
         echo '</tr>';
 
@@ -905,10 +943,10 @@ class Expman_Firewalls_UI {
             echo '<th><input style="width:100%" name="f_customer_number" value="' . esc_attr( $filters['customer_number'] ) . '" placeholder="סינון..."></th>';
             echo '<th><input style="width:100%" name="f_customer_name" value="' . esc_attr( $filters['customer_name'] ) . '" placeholder="סינון..."></th>';
             echo '<th><input style="width:100%" name="f_branch" value="' . esc_attr( $filters['branch'] ) . '" placeholder="סינון..."></th>';
-            echo '<th class="expman-align-left"><input style="width:100%" name="f_serial_number" value="' . esc_attr( $filters['serial_number'] ) . '" placeholder="סינון..."></th>';
+            echo '<th class="expman-align-left expman-serial-col"><input style="width:100%" name="f_serial_number" value="' . esc_attr( $filters['serial_number'] ) . '" placeholder="סינון..."></th>';
             echo '<th></th>'; // days_to_renew
-            echo '<th class="expman-ms-wrap expman-align-left" data-ms="vendor"></th>';
-            echo '<th class="expman-ms-wrap expman-align-left" data-ms="model"></th>';
+            echo '<th class="expman-ms-wrap expman-align-left" data-ms="vendor" style="text-align:left;"></th>';
+            echo '<th class="expman-ms-wrap expman-align-left" data-ms="model" style="text-align:left;"></th>';
             if ( $show_status_cols && $show_status_filters ) {
                 echo '<th><select name="f_is_managed" style="width:100%;">';
                 echo '<option value="">הכל</option>';
@@ -973,7 +1011,7 @@ class Expman_Firewalls_UI {
             if ( ! empty( $r->access_url ) ) {
                 $u = (string) $r->access_url;
                 if ( ! preg_match( '/^https?:\/\//i', $u ) ) { $u = 'https://' . ltrim( $u ); }
-                $access_btn = '<a class="expman-btn secondary" style="text-decoration:none;padding:6px 10px;" href="' . esc_url( $u ) . '" target="_blank" rel="noopener noreferrer">גישה</a>';
+                $access_btn = '<a class="expman-btn secondary" style="text-decoration:none;padding:6px 10px;" href="' . esc_url( $u ) . '" target="_blank" rel="noopener noreferrer">URL</a>';
             }
 
             $managed_label = intval( $r->is_managed ) ? 'שלנו' : 'לא שלנו';
@@ -987,15 +1025,15 @@ class Expman_Firewalls_UI {
             echo '<td>' . esc_html( $r->customer_number ?? '' ) . '</td>';
             echo '<td>' . esc_html( $r->customer_name ?? '' ) . '</td>';
             echo '<td>' . esc_html( $r->branch ?? '' ) . '</td>';
-            echo '<td class="expman-align-left">' . esc_html( $r->serial_number ) . '</td>';
-            echo '<td class="expman-align-left ' . esc_attr( $days_class ) . '">' . esc_html( $days ) . '</td>';
+            echo '<td class="expman-align-left expman-serial-col">' . esc_html( $r->serial_number ) . '</td>';
+            echo '<td class="expman-center ' . esc_attr( $days_class ) . '">' . esc_html( $days ) . '</td>';
             echo '<td class="expman-align-left">' . esc_html( $r->vendor ?? '' ) . '</td>';
             echo '<td class="expman-align-left">' . esc_html( $r->model ?? '' ) . '</td>';
             if ( $show_status_cols ) {
                 echo '<td>' . esc_html( $managed_label ) . '</td>';
                 echo '<td>' . esc_html( intval( $r->track_only ) ? 'כן' : 'לא' ) . '</td>';
             }
-            echo '<td>' . $access_btn . '</td>';
+            echo '<td></td>';
 
             echo '<td style="white-space:nowrap;" onclick="event.stopPropagation();">';
             echo '<a href="#" class="expman-btn expman-edit-btn" style="text-decoration:none;padding:6px 10px;" data-id="' . esc_attr( $r->id ) . '">עריכה</a> ';
@@ -1039,10 +1077,34 @@ class Expman_Firewalls_UI {
             // Details row (click row expands)
             echo '<tr class="expman-details" data-for="' . esc_attr( $r->id ) . '" style="display:none;background:#fafafa;">';
             echo '<td colspan="' . esc_attr( $column_count ) . '">';
+            $created_label = '';
+            if ( ! empty( $r->created_at ) ) {
+                $created_label = date_i18n( 'd-m-Y', strtotime( $r->created_at ) );
+            }
+            $contact_button = '';
+            if ( ! empty( $vendor_contacts ) ) {
+                $contact = $vendor_contacts[0];
+                $contact_name = (string) ( $contact['name'] ?? '' );
+                $contact_email = (string) ( $contact['email'] ?? '' );
+                if ( $contact_email !== '' ) {
+                    $subject = 'הצעת מחיר לחידוש חומת אש ' . (string) ( $r->customer_name ?? '' );
+                    $body = "שלום {$contact_name}\nאני מבקש הצעת מחיר עבור {$r->serial_number} לשנה נוספת\n\nתודה";
+                    $mailto = 'mailto:' . rawurlencode( $contact_email )
+                        . '?subject=' . rawurlencode( $subject )
+                        . '&body=' . rawurlencode( $body );
+                    $contact_button = '<a class="expman-btn secondary" style="text-decoration:none;padding:6px 10px;" href="' . esc_url( $mailto ) . '">שליחת מייל</a>';
+                }
+            }
+
             echo '<div style="display:flex;gap:20px;flex-wrap:wrap;">';
             echo '<div style="min-width:260px;"><strong>הערה קבועה:</strong><div style="white-space:pre-wrap;">' . esc_html( (string) $r->notes ) . '</div></div>';
             echo '<div style="min-width:260px;"><strong>הודעה זמנית:</strong><div style="white-space:pre-wrap;">' . esc_html( intval( $r->temp_notice_enabled ) ? (string) $r->temp_notice : '' ) . '</div></div>';
             echo '<div style="min-width:180px;"><strong>תאריך לחידוש:</strong> ' . esc_html( ( ! empty( $r->expiry_date ) ? date_i18n( 'd-m-Y', strtotime( $r->expiry_date ) ) : '' ) ) . '</div>';
+            echo '<div style="min-width:200px;"><strong>תאריך רישום:</strong> ' . esc_html( $created_label ) . '</div>';
+            echo '<div style="min-width:200px;"><strong>URL:</strong> ' . $access_btn . '</div>';
+            if ( $contact_button !== '' ) {
+                echo '<div style="min-width:160px;">' . $contact_button . '</div>';
+            }
             echo '</div>';
             echo '</td></tr>';
         }
