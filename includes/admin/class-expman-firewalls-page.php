@@ -1905,6 +1905,7 @@ echo '<style>.expman-frontend.expman-firewalls input,.expman-frontend.expman-fir
             'active',
             $clear_url,
             array(
+                'show_filters'        => true,
                 'show_status_cols'    => false,
                 'show_status_filters' => false,
                 'hidden_filters'      => array(
@@ -1928,6 +1929,7 @@ echo '<style>.expman-frontend.expman-firewalls input,.expman-frontend.expman-fir
             'active',
             $clear_url,
             array(
+                'show_filters'        => false,
                 'show_status_cols'    => false,
                 'show_status_filters' => false,
                 'hidden_filters'      => array(
@@ -2192,15 +2194,16 @@ echo '<style>.expman-frontend.expman-firewalls input,.expman-frontend.expman-fir
     private function render_table( $rows, $filters, $orderby, $order, $table_mode, $clear_url = null, $options = array() ) {
         $base = remove_query_arg( array( 'expman_msg' ) );
         $uid  = wp_generate_uuid4();
-        $show_filters = true;
         $options = wp_parse_args(
             $options,
             array(
+                'show_filters'        => true,
                 'show_status_cols'    => true,
                 'show_status_filters' => true,
                 'hidden_filters'      => array(),
             )
         );
+        $show_filters = (bool) $options['show_filters'];
         $show_status_cols = (bool) $options['show_status_cols'];
         $show_status_filters = (bool) $options['show_status_filters'];
         $hidden_filters = (array) $options['hidden_filters'];
