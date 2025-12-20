@@ -127,4 +127,34 @@ class Expman_Nav {
         }
         echo '</ul></nav>';
     }
+
+    public static function render_admin_nav( $version = '' ) {
+        if ( self::$rendered ) { return; }
+        self::$rendered = true;
+
+        $items = array(
+            'expman_dashboard' => 'Dashboard',
+            'expman_firewalls' => 'חומות אש',
+            'expman_certs'     => 'תעודות אבטחה',
+            'expman_domains'   => 'דומיינים',
+            'expman_servers'   => 'שרתים',
+            'expman_trash'     => 'Trash',
+            'expman_logs'      => 'Logs',
+            'expman_settings'  => 'Settings',
+        );
+
+        echo '<style>
+        .expman-admin-nav{margin:10px 0;padding:12px;border:1px solid #d5deeb;border-radius:12px;background:#f7f9fc;}
+        .expman-admin-nav ul{list-style:none;margin:0;padding:0;display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end;}
+        .expman-admin-nav a{display:inline-block;padding:6px 10px;border-radius:10px;border:1px solid #9fb3d9;text-decoration:none;font-weight:700;background:#2f5ea8;color:#fff;}
+        .expman-admin-nav a:hover{background:#264f8f;border-color:#264f8f;}
+        </style>';
+
+        echo '<nav class="expman-admin-nav" aria-label="Expiry Manager Admin Navigation"><ul>';
+        foreach ( $items as $slug => $label ) {
+            $url = admin_url( 'admin.php?page=' . $slug );
+            echo '<li><a href="' . esc_url( $url ) . '">' . esc_html( $label ) . '</a></li>';
+        }
+        echo '</ul></nav>';
+    }
 }

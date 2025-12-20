@@ -205,7 +205,7 @@ dbDelta( $sql_types );
     private $version;
     private $notices = array();
 
-    private function __construct( $option_key, $version ) {
+    public function __construct( $option_key, $version ) {
         $this->option_key = $option_key;
         $this->version    = $version;
     }
@@ -1032,6 +1032,9 @@ if ( $id > 0 ) {
         );
 
         $vendor = sanitize_text_field( $asset->category_name ?? '' );
+        if ( $vendor === '' ) {
+            $vendor = 'FortiGate';
+        }
         $model  = sanitize_text_field( $asset->model_name ?? '' );
         $box_type_id = null;
         if ( $vendor !== '' && $model !== '' ) {
@@ -1068,6 +1071,7 @@ if ( $id > 0 ) {
             'track_only'      => 0,
             'box_type_id'     => $box_type_id,
             'expiry_date'     => $expiry_date !== '' ? $expiry_date : null,
+            'notes'           => $asset->description ?? null,
             'updated_at'      => current_time( 'mysql' ),
         );
 
@@ -1298,11 +1302,11 @@ if ( $id > 0 ) {
                     continue;
                 }
 
-                $vendor = $this->get_import_value( $data, $header_map, array( 'vendor', 'manufacturer', 'product family', 'product_family', 'product_type', 'category' ) );
+                $vendor = 'FortiGate';
                 $model  = $this->get_import_value( $data, $header_map, array( 'product model', 'model', 'model_name' ) );
                 $desc   = $this->get_import_value( $data, $header_map, array( 'description' ) );
-                $expiry_raw = $this->get_import_value( $data, $header_map, array( 'unit expiration date', 'expiration date', 'expiry date', 'expiry_date' ) );
-                $registration_raw = $this->get_import_value( $data, $header_map, array( 'registration date', 'registration_date' ) );
+                $expiry_raw = $this->get_import_value( $data, $header_map, array( 'unit expiration date', 'unit expiration da', 'expiration date', 'expiry date', 'expiry_date' ) );
+                $registration_raw = $this->get_import_value( $data, $header_map, array( 'registration date', 'registration da', 'registration_date' ) );
 
                 $expiry_date = $this->normalize_import_date( $expiry_raw );
                 $registration_date = $this->normalize_import_date( $registration_raw );
@@ -1311,7 +1315,7 @@ if ( $id > 0 ) {
                     $assets_table,
                     array(
                         'serial_number'     => $serial,
-                        'category_name'     => $vendor !== '' ? sanitize_text_field( $vendor ) : null,
+                        'category_name'     => sanitize_text_field( $vendor ),
                         'model_name'        => $model !== '' ? sanitize_text_field( $model ) : null,
                         'expiration_date'   => $expiry_date,
                         'registration_date' => $registration_date,
