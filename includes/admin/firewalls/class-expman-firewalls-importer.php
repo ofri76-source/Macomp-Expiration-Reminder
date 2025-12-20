@@ -28,8 +28,10 @@ class Expman_Firewalls_Importer {
         $types_table  = $wpdb->prefix . Expman_Firewalls_Page::TABLE_TYPES;
         $cust_table   = $wpdb->prefix . 'dc_customers';
         $assets_table = $wpdb->prefix . Expman_Firewalls_Page::TABLE_FORTICLOUD_ASSETS;
+        $stage_table  = $wpdb->prefix . Expman_Firewalls_Page::TABLE_FIREWALL_IMPORT_STAGE;
 
         $request_id = $this->logger->new_request_id();
+        $batch_id = function_exists( 'wp_generate_uuid4' ) ? wp_generate_uuid4() : $request_id;
         $row_num = 0;
         $imported = 0;
         $updated  = 0;
@@ -183,6 +185,7 @@ class Expman_Firewalls_Importer {
             $col = array_pad( $data, 16, '' );
             $id              = intval( trim( $this->get_import_value( $data, $header_map, array( 'id' ), $col[0] ) ) );
             $customer_number = trim( (string) $this->get_import_value( $data, $header_map, array( 'customer_number' ), $col[1] ) );
+            $customer_name_import = trim( (string) $this->get_import_value( $data, $header_map, array( 'customer_name' ), $col[2] ) );
             $branch          = trim( (string) $this->get_import_value( $data, $header_map, array( 'branch' ), $col[3] ) );
             $serial          = trim( (string) $this->get_import_value( $data, $header_map, array( 'serial_number' ), $col[4] ) );
             $is_managed      = trim( (string) $this->get_import_value( $data, $header_map, array( 'is_managed' ), $col[5] ) ) === '0' ? 0 : 1;
@@ -222,12 +225,16 @@ class Expman_Firewalls_Importer {
 
             // customer_id by customer_number (optional)
             $customer_id = null;
+            $customer_name = $customer_name_import;
             if ( $customer_number !== '' ) {
-                $customer_id = $wpdb->get_var( $wpdb->prepare(
-                    "SELECT id FROM {$cust_table} WHERE is_deleted=0 AND customer_number=%s LIMIT 1",
+                $customer_row = $wpdb->get_row( $wpdb->prepare(
+                    "SELECT id, customer_name FROM {$cust_table} WHERE is_deleted=0 AND customer_number=%s LIMIT 1",
                     $customer_number
-                ) );
-                $customer_id = $customer_id ? intval( $customer_id ) : null;
+                ), ARRAY_A );
+                if ( $customer_row ) {
+                    $customer_id = intval( $customer_row['id'] );
+                    $customer_name = (string) ( $customer_row['customer_name'] ?? $customer_name );
+                }
             }
 
             // vendor/model -> box_type_id (optional)
@@ -257,40 +264,35 @@ class Expman_Firewalls_Importer {
                 $access_url = 'https://' . ltrim( $access_url );
             }
 
-            // Unique serial check (skip existing rows entirely)
-            $exists = $wpdb->get_var( $wpdb->prepare(
+            // Existing serials are staged for review/assignment instead of skipping.
+            $existing_firewall_id = $wpdb->get_var( $wpdb->prepare(
                 "SELECT id FROM {$fw_table} WHERE serial_number=%s LIMIT 1",
                 $serial
             ) );
-            if ( $exists ) {
-                $skipped++;
-                $errors[] = "שורה {$row_num}: מספר סידורי כבר קיים ({$serial}).";
-                $this->log_import_row( 'import_skip', array(
-                    'request_id'    => $request_id,
-                    'row_number'    => $row_num,
-                    'serial_number' => $serial,
-                    'reason'        => 'serial_exists',
-                    'payload'       => $data,
-                    'existing'      => array( 'firewall_id' => $exists ),
-                    'last_query'    => $wpdb->last_query,
-                    'last_error'    => $wpdb->last_error,
-                ) );
-                continue;
-            }
 
             $payload = array(
+                'import_batch_id'     => $batch_id,
+                'imported_at'         => current_time( 'mysql' ),
+                'imported_by_user_id' => get_current_user_id(),
                 'customer_id'         => $customer_id,
+                'customer_number'     => $customer_number !== '' ? $customer_number : null,
+                'customer_name'       => $customer_name !== '' ? $customer_name : null,
                 'branch'              => $branch !== '' ? $branch : null,
                 'serial_number'       => $serial,
                 'is_managed'          => $is_managed,
                 'track_only'          => $track_only,
+                'vendor'              => $vendor !== '' ? $vendor : null,
+                'model'               => $model !== '' ? $model : null,
                 'box_type_id'         => $box_type_id,
                 'expiry_date'         => $expiry !== '' ? $expiry : null,
                 'access_url'          => $access_url !== '' ? $access_url : null,
                 'notes'               => $notes,
                 'temp_notice_enabled' => $tmp_enabled,
                 'temp_notice'         => $tmp_enabled ? $tmp_notice : '',
+                'created_at'          => $registration_date ? $registration_date : current_time( 'mysql' ),
                 'updated_at'          => current_time( 'mysql' ),
+                'status'              => 'pending',
+                'firewall_id'         => $existing_firewall_id ? intval( $existing_firewall_id ) : null,
             );
 
             if ( $id > 0 ) {
@@ -307,8 +309,7 @@ class Expman_Firewalls_Importer {
                     'last_error'    => $wpdb->last_error,
                 ) );
             } else {
-                $payload['created_at'] = $registration_date ? $registration_date : current_time( 'mysql' );
-                $ok = $wpdb->insert( $fw_table, $payload );
+                $ok = $wpdb->insert( $stage_table, $payload );
                 if ( $ok === false ) {
                     $skipped++;
                     $errors[] = "שורה {$row_num}: הוספה נכשלה: " . $wpdb->last_error;
@@ -326,14 +327,19 @@ class Expman_Firewalls_Importer {
                     continue;
                 }
                 $imported++;
-                $this->logger->log_firewall_event( $wpdb->insert_id, 'import_create', 'נוסף רישום בייבוא' );
-                $this->log_import_row( 'import_create', array(
+                $action_label = $existing_firewall_id ? 'import_update' : 'import_create';
+                $this->logger->log_firewall_event( $wpdb->insert_id, $action_label, 'נוסף רישום בייבוא ל-Staging', array(
+                    'batch_id'      => $batch_id,
+                    'firewall_id'   => $existing_firewall_id ? intval( $existing_firewall_id ) : null,
+                    'serial_number' => $serial,
+                ) );
+                $this->log_import_row( $existing_firewall_id ? 'import_update' : 'import_create', array(
                     'request_id'    => $request_id,
                     'row_number'    => $row_num,
                     'serial_number' => $serial,
-                    'reason'        => 'created_firewall',
+                    'reason'        => $existing_firewall_id ? 'staged_for_update' : 'staged_for_create',
                     'payload'       => $payload,
-                    'existing'      => null,
+                    'existing'      => $existing_firewall_id ? array( 'firewall_id' => intval( $existing_firewall_id ) ) : null,
                     'last_query'    => $wpdb->last_query,
                     'last_error'    => $wpdb->last_error,
                 ) );
@@ -342,6 +348,7 @@ class Expman_Firewalls_Importer {
 
         fclose( $h );
         $summary = array( "ייבוא הסתיים. נוספו {$imported}, עודכנו {$updated}, דולגו {$skipped}." );
+        set_transient( 'expman_firewalls_import_batch', $batch_id, 300 );
         set_transient( 'expman_firewalls_errors', array_merge( $summary, $errors ), 120 );
     }
 

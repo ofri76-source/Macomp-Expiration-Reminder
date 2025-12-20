@@ -100,6 +100,22 @@ class Expman_Firewalls_UI {
             echo '<div class="notice notice-error"><p>' . esc_html( implode( ' | ', (array) $errors ) ) . '</p></div>';
         }
 
+        $batch_id = get_transient( 'expman_firewalls_import_batch' );
+        if ( $batch_id ) {
+            delete_transient( 'expman_firewalls_import_batch' );
+            $assign_url = add_query_arg(
+                array(
+                    'tab'   => 'assign',
+                    'batch' => $batch_id,
+                ),
+                remove_query_arg( array( 'expman_msg', 'tab', 'batch' ) )
+            );
+            echo '<div class="notice notice-info"><p>';
+            echo 'ייבוא הועבר לטבלת שיוכים. ';
+            echo '<a class="button" href="' . esc_url( $assign_url ) . '">מעבר לשיוכים</a>';
+            echo '</p></div>';
+        }
+
         if ( ! empty( $_GET['expman_msg'] ) ) {
             $msg = rawurldecode( (string) wp_unslash( $_GET['expman_msg'] ) );
             echo '<div class="notice notice-success"><p>' . esc_html( sanitize_text_field( $msg ) ) . '</p></div>';
@@ -119,6 +135,10 @@ class Expman_Firewalls_UI {
 
         echo '<div data-expman-panel="bulk"' . ( $active === 'bulk' ? '' : ' style="display:none;"' ) . '>';
         $this->render_bulk_tab();
+        echo '</div>';
+
+        echo '<div data-expman-panel="assign"' . ( $active === 'assign' ? '' : ' style="display:none;"' ) . '>';
+        $this->render_assign_tab();
         echo '</div>';
 
         echo '<div data-expman-panel="settings"' . ( $active === 'settings' ? '' : ' style="display:none;"' ) . '>';
@@ -143,7 +163,7 @@ class Expman_Firewalls_UI {
     }
 
     private function get_active_tab() {
-        $allowed = array( 'main', 'bulk', 'settings', 'trash', 'logs', 'archive' );
+        $allowed = array( 'main', 'bulk', 'assign', 'settings', 'trash', 'logs', 'archive' );
         $tab = sanitize_key( $_REQUEST['tab'] ?? 'main' );
         return in_array( $tab, $allowed, true ) ? $tab : 'main';
     }
@@ -153,6 +173,7 @@ class Expman_Firewalls_UI {
         $tabs = array(
             'main'     => 'רשימה ראשית',
             'bulk'     => 'עריכה קבוצתית',
+            'assign'   => 'שיוך לאחר ייבוא',
             'settings' => 'הגדרות',
             'logs'     => 'לוגים',
             'trash'    => 'סל מחזור',
@@ -423,6 +444,155 @@ class Expman_Firewalls_UI {
           document.addEventListener("click",function(e){
             if(e.target.classList.contains("expman-customer-search")) return;
             document.querySelectorAll(".expman-customer-results").forEach(r=>{r.innerHTML="";});
+          });
+        })();</script>';
+    }
+
+    private function render_assign_tab() {
+        $actions = $this->page->get_actions();
+        $batch_id = sanitize_text_field( $_GET['batch'] ?? '' );
+
+        echo '<h3>שיוך לאחר ייבוא</h3>';
+        echo '<p style="color:#555;">בחר באצ׳ ייבוא להצגה, ערוך את השדות ולחץ “שיוך” לשמירה.</p>';
+
+        echo '<form method="get" style="margin-bottom:12px;">';
+        echo '<input type="hidden" name="tab" value="assign">';
+        echo '<label style="display:inline-block;margin-left:8px;">Batch ID:</label>';
+        echo '<input type="text" name="batch" value="' . esc_attr( $batch_id ) . '" style="min-width:280px;">';
+        echo '<button class="button" type="submit" style="margin-right:6px;">טען</button>';
+        echo '</form>';
+
+        if ( $batch_id === '' ) {
+            echo '<div class="notice notice-info"><p>הזן Batch ID כדי להציג שורות שיוך.</p></div>';
+            return;
+        }
+
+        $rows = $actions->get_import_stage_rows( $batch_id );
+        if ( empty( $rows ) ) {
+            echo '<div class="notice notice-warning"><p>לא נמצאו שורות עבור ה־Batch הזה.</p></div>';
+            return;
+        }
+
+        echo '<table class="widefat striped">';
+        echo '<thead><tr>';
+        echo '<th>סטטוס</th>';
+        echo '<th>לקוח (חיפוש)</th>';
+        echo '<th>מספר לקוח</th>';
+        echo '<th>שם לקוח</th>';
+        echo '<th>מספר סידורי</th>';
+        echo '<th>סניף</th>';
+        echo '<th>ניהול</th>';
+        echo '<th>מעקב</th>';
+        echo '<th>יצרן</th>';
+        echo '<th>דגם</th>';
+        echo '<th>תפוגה</th>';
+        echo '<th>גישה</th>';
+        echo '<th>הערות</th>';
+        echo '<th>הודעה זמנית</th>';
+        echo '<th>טקסט הודעה זמנית</th>';
+        echo '<th>פעולה</th>';
+        echo '</tr></thead><tbody>';
+
+        foreach ( $rows as $row ) {
+            $status = (string) ( $row->status ?? 'pending' );
+            echo '<tr>';
+            echo '<td>' . esc_html( $status ) . '</td>';
+            echo '<td>';
+            echo '<input type="text" class="expman-stage-customer-search" placeholder="חפש לקוח..." style="min-width:200px;">';
+            echo '<div class="expman-stage-customer-results" style="position:relative;"></div>';
+            echo '</td>';
+            echo '<td><input type="text" name="customer_number" value="' . esc_attr( $row->customer_number ?? '' ) . '" form="expman-stage-' . esc_attr( $row->id ) . '"></td>';
+            echo '<td><input type="text" name="customer_name" value="' . esc_attr( $row->customer_name ?? '' ) . '" form="expman-stage-' . esc_attr( $row->id ) . '"></td>';
+            echo '<td><input type="text" name="serial_number" value="' . esc_attr( $row->serial_number ?? '' ) . '" form="expman-stage-' . esc_attr( $row->id ) . '"></td>';
+            echo '<td><input type="text" name="branch" value="' . esc_attr( $row->branch ?? '' ) . '" form="expman-stage-' . esc_attr( $row->id ) . '"></td>';
+            echo '<td><select name="is_managed" form="expman-stage-' . esc_attr( $row->id ) . '">';
+            echo '<option value="1" ' . selected( $row->is_managed, 1, false ) . '>שלנו</option>';
+            echo '<option value="0" ' . selected( $row->is_managed, 0, false ) . '>לא שלנו</option>';
+            echo '</select></td>';
+            echo '<td><select name="track_only" form="expman-stage-' . esc_attr( $row->id ) . '">';
+            echo '<option value="0" ' . selected( $row->track_only, 0, false ) . '>לא</option>';
+            echo '<option value="1" ' . selected( $row->track_only, 1, false ) . '>כן</option>';
+            echo '</select></td>';
+            echo '<td><input type="text" name="vendor" value="' . esc_attr( $row->vendor ?? '' ) . '" form="expman-stage-' . esc_attr( $row->id ) . '"></td>';
+            echo '<td><input type="text" name="model" value="' . esc_attr( $row->model ?? '' ) . '" form="expman-stage-' . esc_attr( $row->id ) . '"></td>';
+            echo '<td><input type="date" name="expiry_date" value="' . esc_attr( $row->expiry_date ?? '' ) . '" form="expman-stage-' . esc_attr( $row->id ) . '"></td>';
+            echo '<td><input type="text" name="access_url" value="' . esc_attr( $row->access_url ?? '' ) . '" form="expman-stage-' . esc_attr( $row->id ) . '"></td>';
+            echo '<td><textarea name="notes" rows="2" form="expman-stage-' . esc_attr( $row->id ) . '">' . esc_textarea( $row->notes ?? '' ) . '</textarea></td>';
+            echo '<td><select name="temp_notice_enabled" form="expman-stage-' . esc_attr( $row->id ) . '">';
+            echo '<option value="0" ' . selected( $row->temp_notice_enabled ?? 0, 0, false ) . '>לא</option>';
+            echo '<option value="1" ' . selected( $row->temp_notice_enabled ?? 0, 1, false ) . '>כן</option>';
+            echo '</select></td>';
+            echo '<td><textarea name="temp_notice" rows="2" form="expman-stage-' . esc_attr( $row->id ) . '">' . esc_textarea( $row->temp_notice ?? '' ) . '</textarea></td>';
+            echo '<td>';
+            echo '<form method="post" id="expman-stage-' . esc_attr( $row->id ) . '">';
+            wp_nonce_field( 'expman_firewalls' );
+            echo '<input type="hidden" name="expman_action" value="assign_import_stage">';
+            echo '<input type="hidden" name="tab" value="assign">';
+            echo '<input type="hidden" name="batch" value="' . esc_attr( $batch_id ) . '">';
+            echo '<input type="hidden" name="stage_id" value="' . esc_attr( $row->id ) . '">';
+            echo '<input type="hidden" name="customer_id" class="expman-stage-customer-id" value="' . esc_attr( $row->customer_id ?? '' ) . '">';
+            echo '<button class="button button-primary" type="submit">שיוך</button>';
+            if ( $status === 'failed' && ! empty( $row->last_error ) ) {
+                echo '<div style="margin-top:6px;color:#b32d2e;font-size:12px;">' . esc_html( $row->last_error ) . '</div>';
+            }
+            echo '</form>';
+            echo '</td>';
+            echo '</tr>';
+        }
+
+        echo '</tbody></table>';
+
+        $ajax = esc_url( admin_url( 'admin-ajax.php' ) );
+        $nonce = wp_create_nonce( 'expman_customer_search' );
+        echo '<script>(function(){
+          const ajax="' . esc_js( $ajax ) . '";
+          const nonce="' . esc_js( $nonce ) . '";
+          function fetchCustomers(query, cb){
+            const url=ajax+"?action=expman_customer_search&nonce="+encodeURIComponent(nonce)+"&q="+encodeURIComponent(query);
+            fetch(url).then(r=>r.json()).then(d=>cb(d.items||[])).catch(()=>cb([]));
+          }
+          document.querySelectorAll(".expman-stage-customer-search").forEach(function(input){
+            input.addEventListener("input",function(){
+              const cell=input.closest("tr");
+              const results=cell.querySelector(".expman-stage-customer-results");
+              const q=input.value.trim();
+              results.innerHTML="";
+              if(q.length<2){return;}
+              fetchCustomers(q,function(items){
+                results.innerHTML="";
+                const wrap=document.createElement("div");
+                wrap.style.position="absolute";
+                wrap.style.background="#fff";
+                wrap.style.border="1px solid #ddd";
+                wrap.style.borderRadius="6px";
+                wrap.style.zIndex="999";
+                wrap.style.minWidth="220px";
+                items.forEach(function(it){
+                  const btn=document.createElement("button");
+                  btn.type="button";
+                  btn.textContent=it.customer_number+" - "+it.customer_name;
+                  btn.style.display="block";
+                  btn.style.width="100%";
+                  btn.style.textAlign="right";
+                  btn.style.padding="6px 8px";
+                  btn.style.border="0";
+                  btn.style.background="transparent";
+                  btn.addEventListener("click",function(){
+                    input.value=it.customer_number+" - "+it.customer_name;
+                    cell.querySelector(".expman-stage-customer-id").value=it.id;
+                    cell.querySelector("input[name=customer_number]").value=it.customer_number;
+                    cell.querySelector("input[name=customer_name]").value=it.customer_name;
+                    results.innerHTML="";
+                  });
+                  wrap.appendChild(btn);
+                });
+                results.appendChild(wrap);
+              });
+            });
+          });
+          document.addEventListener("click",function(e){
+            if(e.target.classList.contains("expman-stage-customer-search")) return;
+            document.querySelectorAll(".expman-stage-customer-results").forEach(r=>{r.innerHTML="";});
           });
         })();</script>';
     }

@@ -418,7 +418,7 @@ class Expman_Firewalls_Actions {
         $id = isset( $_POST['firewall_id'] ) ? intval( $_POST['firewall_id'] ) : 0;
         if ( $id <= 0 ) { return; }
 
-        $wpdb->update(
+        $ok = $wpdb->update(
             $fw_table,
             array( 'deleted_at' => current_time( 'mysql' ) ),
             array( 'id' => $id ),
@@ -426,6 +426,9 @@ class Expman_Firewalls_Actions {
             array( '%d' )
         );
         $this->logger->log_firewall_event( $id, 'delete', 'רישום הועבר לסל המחזור' );
+        if ( $ok === false ) {
+            $this->logger->log_firewall_event( $id, 'delete', 'עדכון מחיקה נכשל', array( 'error' => $wpdb->last_error ), 'error' );
+        }
     }
 
     public function action_restore_firewall() {
@@ -434,7 +437,7 @@ class Expman_Firewalls_Actions {
         $id = isset( $_POST['firewall_id'] ) ? intval( $_POST['firewall_id'] ) : 0;
         if ( $id <= 0 ) { return; }
 
-        $wpdb->update(
+        $ok = $wpdb->update(
             $fw_table,
             array( 'deleted_at' => null ),
             array( 'id' => $id ),
@@ -442,6 +445,9 @@ class Expman_Firewalls_Actions {
             array( '%d' )
         );
         $this->logger->log_firewall_event( $id, 'restore', 'רישום שוחזר מסל המחזור' );
+        if ( $ok === false ) {
+            $this->logger->log_firewall_event( $id, 'restore', 'שחזור מסל המחזור נכשל', array( 'error' => $wpdb->last_error ), 'error' );
+        }
     }
 
     public function action_archive_firewall() {
@@ -450,7 +456,7 @@ class Expman_Firewalls_Actions {
         $id = isset( $_POST['firewall_id'] ) ? intval( $_POST['firewall_id'] ) : 0;
         if ( $id <= 0 ) { return; }
 
-        $wpdb->update(
+        $ok = $wpdb->update(
             $fw_table,
             array( 'archived_at' => current_time( 'mysql' ) ),
             array( 'id' => $id ),
@@ -458,6 +464,9 @@ class Expman_Firewalls_Actions {
             array( '%d' )
         );
         $this->logger->log_firewall_event( $id, 'archive', 'רישום הועבר לארכיון' );
+        if ( $ok === false ) {
+            $this->logger->log_firewall_event( $id, 'archive', 'העברה לארכיון נכשלה', array( 'error' => $wpdb->last_error ), 'error' );
+        }
     }
 
     public function action_restore_archive() {
@@ -466,7 +475,7 @@ class Expman_Firewalls_Actions {
         $id = isset( $_POST['firewall_id'] ) ? intval( $_POST['firewall_id'] ) : 0;
         if ( $id <= 0 ) { return; }
 
-        $wpdb->update(
+        $ok = $wpdb->update(
             $fw_table,
             array( 'archived_at' => null ),
             array( 'id' => $id ),
@@ -474,6 +483,9 @@ class Expman_Firewalls_Actions {
             array( '%d' )
         );
         $this->logger->log_firewall_event( $id, 'unarchive', 'רישום הוחזר מארכיון' );
+        if ( $ok === false ) {
+            $this->logger->log_firewall_event( $id, 'unarchive', 'שחזור מארכיון נכשל', array( 'error' => $wpdb->last_error ), 'error' );
+        }
     }
 
     public function action_export_csv() {
@@ -721,6 +733,209 @@ class Expman_Firewalls_Actions {
         $vals = $wpdb->get_col( $sql );
         $vals = array_values( array_filter( array_map( 'trim', (array) $vals ) ) );
         return $vals;
+    }
+
+    public function get_import_stage_rows( $batch_id ) {
+        global $wpdb;
+        $stage_table = $wpdb->prefix . Expman_Firewalls_Page::TABLE_FIREWALL_IMPORT_STAGE;
+        if ( $batch_id === '' ) {
+            return array();
+        }
+        return $wpdb->get_results(
+            $wpdb->prepare(
+                "SELECT * FROM {$stage_table} WHERE import_batch_id=%s ORDER BY id ASC",
+                $batch_id
+            )
+        );
+    }
+
+    public function action_assign_import_stage() {
+        global $wpdb;
+        $stage_table = $wpdb->prefix . Expman_Firewalls_Page::TABLE_FIREWALL_IMPORT_STAGE;
+        $fw_table    = $wpdb->prefix . Expman_Firewalls_Page::TABLE_FIREWALLS;
+        $types_table = $wpdb->prefix . Expman_Firewalls_Page::TABLE_TYPES;
+
+        $stage_id = intval( $_POST['stage_id'] ?? 0 );
+        if ( $stage_id <= 0 ) {
+            return;
+        }
+
+        $stage = $wpdb->get_row( $wpdb->prepare( "SELECT * FROM {$stage_table} WHERE id=%d", $stage_id ), ARRAY_A );
+        if ( ! $stage ) {
+            return;
+        }
+
+        $serial = sanitize_text_field( $_POST['serial_number'] ?? $stage['serial_number'] ?? '' );
+        $customer_id = isset( $_POST['customer_id'] ) ? intval( $_POST['customer_id'] ) : (int) ( $stage['customer_id'] ?? 0 );
+        $customer_number = sanitize_text_field( $_POST['customer_number'] ?? $stage['customer_number'] ?? '' );
+        $customer_name = sanitize_text_field( $_POST['customer_name'] ?? $stage['customer_name'] ?? '' );
+        $branch = sanitize_text_field( $_POST['branch'] ?? $stage['branch'] ?? '' );
+        $is_managed = isset( $_POST['is_managed'] ) ? intval( $_POST['is_managed'] ) : intval( $stage['is_managed'] ?? 1 );
+        $track_only = isset( $_POST['track_only'] ) ? intval( $_POST['track_only'] ) : intval( $stage['track_only'] ?? 0 );
+        $vendor = sanitize_text_field( $_POST['vendor'] ?? $stage['vendor'] ?? '' );
+        $model = sanitize_text_field( $_POST['model'] ?? $stage['model'] ?? '' );
+        $expiry_date = sanitize_text_field( $_POST['expiry_date'] ?? $stage['expiry_date'] ?? '' );
+        $access_url = sanitize_text_field( $_POST['access_url'] ?? $stage['access_url'] ?? '' );
+        $notes = wp_kses_post( $_POST['notes'] ?? $stage['notes'] ?? '' );
+        $temp_notice_enabled = isset( $_POST['temp_notice_enabled'] ) ? intval( $_POST['temp_notice_enabled'] ) : intval( $stage['temp_notice_enabled'] ?? 0 );
+        $temp_notice = wp_kses_post( $_POST['temp_notice'] ?? $stage['temp_notice'] ?? '' );
+
+        if ( $serial === '' ) {
+            $this->mark_stage_failed( $stage_id, 'חסר מספר סידורי.' );
+            return;
+        }
+
+        if ( $customer_id <= 0 && $customer_number !== '' ) {
+            $cust_table = $wpdb->prefix . 'dc_customers';
+            $cust_row = $wpdb->get_row( $wpdb->prepare(
+                "SELECT id, customer_name FROM {$cust_table} WHERE is_deleted=0 AND customer_number=%s LIMIT 1",
+                $customer_number
+            ), ARRAY_A );
+            if ( $cust_row ) {
+                $customer_id = intval( $cust_row['id'] );
+                if ( $customer_name === '' ) {
+                    $customer_name = (string) ( $cust_row['customer_name'] ?? '' );
+                }
+            }
+        }
+
+        if ( $access_url !== '' && ! preg_match( '/^https?:\\/\\//i', $access_url ) ) {
+            $access_url = 'https://' . ltrim( $access_url );
+        }
+
+        $box_type_id = null;
+        if ( $vendor !== '' && $model !== '' ) {
+            $existing = $wpdb->get_var( $wpdb->prepare(
+                "SELECT id FROM {$types_table} WHERE vendor=%s AND model=%s",
+                $vendor,
+                $model
+            ) );
+            if ( $existing ) {
+                $box_type_id = (int) $existing;
+            } else {
+                $wpdb->insert(
+                    $types_table,
+                    array(
+                        'vendor'     => $vendor,
+                        'model'      => $model,
+                        'created_at' => current_time( 'mysql' ),
+                        'updated_at' => current_time( 'mysql' ),
+                    ),
+                    array( '%s', '%s', '%s', '%s' )
+                );
+                $box_type_id = (int) $wpdb->insert_id;
+            }
+        }
+
+        $payload = array(
+            'customer_id'         => $customer_id > 0 ? $customer_id : null,
+            'customer_number'     => $customer_number !== '' ? $customer_number : null,
+            'customer_name'       => $customer_name !== '' ? $customer_name : null,
+            'branch'              => $branch !== '' ? $branch : null,
+            'serial_number'       => $serial,
+            'is_managed'          => $is_managed ? 1 : 0,
+            'track_only'          => $track_only ? 1 : 0,
+            'box_type_id'         => $box_type_id,
+            'expiry_date'         => $expiry_date !== '' ? $expiry_date : null,
+            'access_url'          => $access_url !== '' ? $access_url : null,
+            'notes'               => $notes,
+            'temp_notice_enabled' => $temp_notice_enabled ? 1 : 0,
+            'temp_notice'         => $temp_notice_enabled ? $temp_notice : '',
+            'updated_at'          => current_time( 'mysql' ),
+        );
+
+        $existing_id = $wpdb->get_var( $wpdb->prepare(
+            "SELECT id FROM {$fw_table} WHERE serial_number=%s LIMIT 1",
+            $serial
+        ) );
+
+        $firewall_id = null;
+        if ( $existing_id ) {
+            $ok = $wpdb->update( $fw_table, $payload, array( 'id' => intval( $existing_id ) ) );
+            if ( $ok === false ) {
+                $this->mark_stage_failed( $stage_id, $wpdb->last_error );
+                $this->logger->log_firewall_event( intval( $existing_id ), 'import_stage_assign', 'עדכון חומת אש נכשל', array(
+                    'batch_id'      => $stage['import_batch_id'],
+                    'stage_id'      => $stage_id,
+                    'serial_number' => $serial,
+                    'customer_id'   => $customer_id,
+                    'payload'       => $payload,
+                    'last_error'    => $wpdb->last_error,
+                ), 'error' );
+                return;
+            }
+            $firewall_id = intval( $existing_id );
+        } else {
+            $payload['created_at'] = $stage['created_at'] ? $stage['created_at'] : current_time( 'mysql' );
+            $ok = $wpdb->insert( $fw_table, $payload );
+            if ( $ok === false ) {
+                $this->mark_stage_failed( $stage_id, $wpdb->last_error );
+                $this->logger->log_firewall_event( null, 'import_stage_assign', 'יצירת חומת אש נכשלה', array(
+                    'batch_id'      => $stage['import_batch_id'],
+                    'stage_id'      => $stage_id,
+                    'serial_number' => $serial,
+                    'customer_id'   => $customer_id,
+                    'payload'       => $payload,
+                    'last_error'    => $wpdb->last_error,
+                ), 'error' );
+                return;
+            }
+            $firewall_id = intval( $wpdb->insert_id );
+        }
+
+        $wpdb->update(
+            $stage_table,
+            array(
+                'status'              => 'assigned',
+                'assigned_at'         => current_time( 'mysql' ),
+                'assigned_by_user_id' => get_current_user_id(),
+                'firewall_id'         => $firewall_id,
+                'customer_id'         => $customer_id > 0 ? $customer_id : null,
+                'customer_number'     => $customer_number !== '' ? $customer_number : null,
+                'customer_name'       => $customer_name !== '' ? $customer_name : null,
+                'branch'              => $branch !== '' ? $branch : null,
+                'serial_number'       => $serial,
+                'is_managed'          => $is_managed ? 1 : 0,
+                'track_only'          => $track_only ? 1 : 0,
+                'vendor'              => $vendor !== '' ? $vendor : null,
+                'model'               => $model !== '' ? $model : null,
+                'box_type_id'         => $box_type_id,
+                'expiry_date'         => $expiry_date !== '' ? $expiry_date : null,
+                'access_url'          => $access_url !== '' ? $access_url : null,
+                'notes'               => $notes,
+                'temp_notice_enabled' => $temp_notice_enabled ? 1 : 0,
+                'temp_notice'         => $temp_notice_enabled ? $temp_notice : '',
+                'last_error'          => null,
+                'last_error_at'       => null,
+            ),
+            array( 'id' => $stage_id ),
+            array( '%s', '%s', '%d', '%d', '%d', '%s', '%s', '%s', '%s', '%d', '%d', '%s', '%s', '%d', '%s', '%s', '%s', '%d', '%s', '%s', '%s' ),
+            array( '%d' )
+        );
+
+        $this->logger->log_firewall_event( $firewall_id, 'import_stage_assign', 'שיוך לאחר ייבוא', array(
+            'batch_id'      => $stage['import_batch_id'],
+            'stage_id'      => $stage_id,
+            'serial_number' => $serial,
+            'customer_id'   => $customer_id,
+            'payload'       => $payload,
+        ), 'info' );
+    }
+
+    private function mark_stage_failed( $stage_id, $error_message ) {
+        global $wpdb;
+        $stage_table = $wpdb->prefix . Expman_Firewalls_Page::TABLE_FIREWALL_IMPORT_STAGE;
+        $wpdb->update(
+            $stage_table,
+            array(
+                'status'        => 'failed',
+                'last_error'    => $error_message,
+                'last_error_at' => current_time( 'mysql' ),
+            ),
+            array( 'id' => $stage_id ),
+            array( '%s', '%s', '%s' ),
+            array( '%d' )
+        );
     }
 }
 }

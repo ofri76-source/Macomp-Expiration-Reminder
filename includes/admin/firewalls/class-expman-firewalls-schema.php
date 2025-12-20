@@ -35,6 +35,7 @@ class Expman_Firewalls_Schema {
             'temp_notice_enabled' => "ALTER TABLE {$fw_table} ADD COLUMN temp_notice_enabled TINYINT(1) NOT NULL DEFAULT 0",
             'temp_notice'     => "ALTER TABLE {$fw_table} ADD COLUMN temp_notice TEXT NULL",
             'archived_at'     => "ALTER TABLE {$fw_table} ADD COLUMN archived_at DATETIME NULL",
+            'deleted_at'      => "ALTER TABLE {$fw_table} ADD COLUMN deleted_at DATETIME NULL",
         );
 
         foreach ( $wanted as $col => $sql ) {
@@ -61,6 +62,7 @@ class Expman_Firewalls_Schema {
         $types_table = $wpdb->prefix . Expman_Firewalls_Page::TABLE_TYPES;
         $assets_table = $wpdb->prefix . Expman_Firewalls_Page::TABLE_FORTICLOUD_ASSETS;
         $logs_table = $wpdb->prefix . Expman_Firewalls_Page::TABLE_FIREWALL_LOGS;
+        $stage_table = $wpdb->prefix . Expman_Firewalls_Page::TABLE_FIREWALL_IMPORT_STAGE;
 
         $sql_fw = "CREATE TABLE {$fw_table} (
             id BIGINT(20) UNSIGNED NOT NULL AUTO_INCREMENT,
@@ -143,9 +145,46 @@ class Expman_Firewalls_Schema {
             KEY level (level)
         ) {$charset_collate};";
 
+        $sql_stage = "CREATE TABLE {$stage_table} (
+            id BIGINT(20) UNSIGNED NOT NULL AUTO_INCREMENT,
+            import_batch_id VARCHAR(64) NOT NULL,
+            imported_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            imported_by_user_id BIGINT(20) NULL,
+            assigned_at DATETIME NULL,
+            assigned_by_user_id BIGINT(20) NULL,
+            firewall_id BIGINT(20) NULL,
+            serial_number VARCHAR(255) NOT NULL,
+            customer_id BIGINT(20) NULL,
+            customer_number VARCHAR(6) NULL,
+            customer_name VARCHAR(255) NULL,
+            branch VARCHAR(255) NULL,
+            is_managed TINYINT(1) NOT NULL DEFAULT 1,
+            track_only TINYINT(1) NOT NULL DEFAULT 0,
+            vendor VARCHAR(255) NULL,
+            model VARCHAR(255) NULL,
+            box_type_id BIGINT(20) NULL,
+            expiry_date DATE NULL,
+            access_url VARCHAR(2048) NULL,
+            notes TEXT NULL,
+            temp_notice_enabled TINYINT(1) NOT NULL DEFAULT 0,
+            temp_notice TEXT NULL,
+            created_at DATETIME NULL,
+            updated_at DATETIME NULL,
+            archived_at DATETIME NULL,
+            deleted_at DATETIME NULL,
+            status VARCHAR(20) NOT NULL DEFAULT 'pending',
+            last_error TEXT NULL,
+            last_error_at DATETIME NULL,
+            PRIMARY KEY (id),
+            KEY import_batch_id (import_batch_id),
+            KEY status (status),
+            KEY serial_number (serial_number)
+        ) {$charset_collate};";
+
         dbDelta( $sql_assets );
         dbDelta( $sql_types );
         dbDelta( $sql_logs );
+        dbDelta( $sql_stage );
     }
 }
 }

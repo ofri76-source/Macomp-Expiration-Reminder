@@ -15,6 +15,7 @@ class Expman_Firewalls_Page {
     const TABLE_TYPES     = 'exp_firewall_box_types';
     const TABLE_FORTICLOUD_ASSETS = 'exp_forticloud_assets';
     const TABLE_FIREWALL_LOGS = 'exp_firewall_logs';
+    const TABLE_FIREWALL_IMPORT_STAGE = 'exp_firewalls_import_stage';
 
     private $option_key;
     private $version;
@@ -79,6 +80,7 @@ class Expman_Firewalls_Page {
 
         self::install_if_missing();
         $self = new self( (string) $option_key, (string) $version );
+        $self->schema->ensure_schema();
         $self->handle_actions();
         $self->render();
     }
@@ -105,6 +107,12 @@ class Expman_Firewalls_Page {
         $logs_table = $wpdb->prefix . self::TABLE_FIREWALL_LOGS;
         $logs_exists = $wpdb->get_var( $wpdb->prepare( "SHOW TABLES LIKE %s", $logs_table ) );
         if ( $logs_exists !== $logs_table ) {
+            self::install_tables();
+        }
+
+        $stage_table = $wpdb->prefix . self::TABLE_FIREWALL_IMPORT_STAGE;
+        $stage_exists = $wpdb->get_var( $wpdb->prepare( "SHOW TABLES LIKE %s", $stage_table ) );
+        if ( $stage_exists !== $stage_table ) {
             self::install_tables();
         }
 
@@ -176,11 +184,18 @@ class Expman_Firewalls_Page {
             case 'save_box_types':
                 $this->action_save_box_types();
                 break;
+            case 'assign_import_stage':
+                $this->action_assign_import_stage();
+                $redirect_tab = 'assign';
+                break;
         }
 
         $redirect_url = remove_query_arg( array( 'expman_msg' ) );
         if ( $redirect_tab !== '' ) {
             $redirect_url = add_query_arg( 'tab', $redirect_tab, $redirect_url );
+        }
+        if ( $redirect_tab === 'assign' && ! empty( $_POST['batch'] ) ) {
+            $redirect_url = add_query_arg( 'batch', sanitize_text_field( $_POST['batch'] ), $redirect_url );
         }
         wp_safe_redirect( $redirect_url );
         exit;
@@ -232,6 +247,10 @@ class Expman_Firewalls_Page {
 
     private function action_save_box_types() {
         $this->actions->action_save_box_types();
+    }
+
+    private function action_assign_import_stage() {
+        $this->actions->action_assign_import_stage();
     }
 
     private function render() {
