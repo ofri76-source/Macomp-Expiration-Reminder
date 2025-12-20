@@ -1202,6 +1202,7 @@ if ( $id > 0 ) {
             'vendor',
             'model',
             'expiry_date',
+            'registration_date',
             'access_url',
             'notes',
             'temp_notice_enabled',
@@ -1221,6 +1222,7 @@ if ( $id > 0 ) {
                 $r->vendor,
                 $r->model,
                 $r->expiry_date,
+                $r->created_at ? date( 'Y-m-d', strtotime( $r->created_at ) ) : '',
                 $r->access_url,
                 $r->notes,
                 $r->temp_notice_enabled,
@@ -1250,12 +1252,15 @@ if ( $id > 0 ) {
         $fw_table    = $wpdb->prefix . self::TABLE_FIREWALLS;
         $types_table = $wpdb->prefix . self::TABLE_TYPES;
         $cust_table  = $wpdb->prefix . 'dc_customers';
+        $assets_table = $wpdb->prefix . self::TABLE_FORTICLOUD_ASSETS;
 
         $row_num = 0;
         $imported = 0;
         $updated  = 0;
         $skipped  = 0;
         $errors   = array();
+        $header_map = array();
+        $import_mode = '';
 
         while ( ( $data = fgetcsv( $h, 0, ',' ) ) !== false ) {
             $row_num++;
@@ -1264,25 +1269,92 @@ if ( $id > 0 ) {
                 $data[0] = preg_replace( '/^\xEF\xBB\xBF/', '', (string) $data[0] );
             }
 
-            if ( $row_num === 1 && isset( $data[0] ) && strtolower( trim( (string) $data[0] ) ) === 'id' ) {
+            if ( $row_num === 1 ) {
+                $header_map = $this->build_import_header_map( $data );
+                if ( ! empty( $header_map ) ) {
+                    if ( isset( $header_map['serial number'] ) || isset( $header_map['serial_number_forticloud'] ) ) {
+                        $import_mode = 'forticloud';
+                    } elseif ( isset( $header_map['serial_number'] ) ) {
+                        $import_mode = 'firewalls';
+                    }
+                    continue;
+                }
+            }
+
+            if ( $import_mode === 'forticloud' ) {
+                $serial = $this->get_import_value( $data, $header_map, array( 'serial number', 'serial_number_forticloud' ) );
+                $serial = trim( (string) $serial );
+                if ( $serial === '' ) {
+                    $skipped++;
+                    $errors[] = "שורה {$row_num}: חסר מספר סידורי.";
+                    continue;
+                }
+
+                $exists_fw = $wpdb->get_var( $wpdb->prepare( "SELECT id FROM {$fw_table} WHERE serial_number=%s LIMIT 1", $serial ) );
+                $exists_asset = $wpdb->get_var( $wpdb->prepare( "SELECT id FROM {$assets_table} WHERE serial_number=%s LIMIT 1", $serial ) );
+                if ( $exists_fw || $exists_asset ) {
+                    $skipped++;
+                    $errors[] = "שורה {$row_num}: מספר סידורי כבר קיים ({$serial}).";
+                    continue;
+                }
+
+                $vendor = $this->get_import_value( $data, $header_map, array( 'vendor', 'manufacturer', 'product family', 'product_family', 'product_type', 'category' ) );
+                $model  = $this->get_import_value( $data, $header_map, array( 'product model', 'model', 'model_name' ) );
+                $desc   = $this->get_import_value( $data, $header_map, array( 'description' ) );
+                $expiry_raw = $this->get_import_value( $data, $header_map, array( 'unit expiration date', 'expiration date', 'expiry date', 'expiry_date' ) );
+                $registration_raw = $this->get_import_value( $data, $header_map, array( 'registration date', 'registration_date' ) );
+
+                $expiry_date = $this->normalize_import_date( $expiry_raw );
+                $registration_date = $this->normalize_import_date( $registration_raw );
+
+                $ok = $wpdb->insert(
+                    $assets_table,
+                    array(
+                        'serial_number'     => $serial,
+                        'category_name'     => $vendor !== '' ? sanitize_text_field( $vendor ) : null,
+                        'model_name'        => $model !== '' ? sanitize_text_field( $model ) : null,
+                        'expiration_date'   => $expiry_date,
+                        'registration_date' => $registration_date,
+                        'description'       => $desc !== '' ? sanitize_textarea_field( $desc ) : null,
+                        'created_at'        => current_time( 'mysql' ),
+                        'updated_at'        => current_time( 'mysql' ),
+                    ),
+                    array( '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s' )
+                );
+
+                if ( $ok === false ) {
+                    $skipped++;
+                    $errors[] = "שורה {$row_num}: הוספה נכשלה: " . $wpdb->last_error;
+                    continue;
+                }
+                $imported++;
                 continue;
             }
 
-            $col = array_pad( $data, 15, '' );
+            $legacy_offset = empty( $header_map ) && count( $data ) <= 15;
+            $col = array_pad( $data, 16, '' );
+            $id              = intval( trim( $this->get_import_value( $data, $header_map, array( 'id' ), $col[0] ) ) );
+            $customer_number = trim( (string) $this->get_import_value( $data, $header_map, array( 'customer_number' ), $col[1] ) );
+            $branch          = trim( (string) $this->get_import_value( $data, $header_map, array( 'branch' ), $col[3] ) );
+            $serial          = trim( (string) $this->get_import_value( $data, $header_map, array( 'serial_number' ), $col[4] ) );
+            $is_managed      = trim( (string) $this->get_import_value( $data, $header_map, array( 'is_managed' ), $col[5] ) ) === '0' ? 0 : 1;
+            $track_only      = trim( (string) $this->get_import_value( $data, $header_map, array( 'track_only' ), $col[6] ) ) === '1' ? 1 : 0;
+            $vendor          = trim( (string) $this->get_import_value( $data, $header_map, array( 'vendor' ), $col[7] ) );
+            $model           = trim( (string) $this->get_import_value( $data, $header_map, array( 'model' ), $col[8] ) );
+            $expiry_raw      = $this->get_import_value( $data, $header_map, array( 'expiry_date' ), $col[9] );
+            $registration_default = $legacy_offset ? '' : $col[10];
+            $access_default = $legacy_offset ? $col[10] : $col[11];
+            $notes_default = $legacy_offset ? $col[11] : $col[12];
+            $tmp_enabled_default = $legacy_offset ? $col[12] : $col[13];
+            $tmp_notice_default = $legacy_offset ? $col[13] : $col[14];
 
-            $id              = intval( trim( $col[0] ) );
-            $customer_number = trim( (string) $col[1] );
-            $branch          = trim( (string) $col[3] );
-            $serial          = trim( (string) $col[4] );
-            $is_managed      = trim( (string) $col[5] ) === '0' ? 0 : 1;
-            $track_only      = trim( (string) $col[6] ) === '1' ? 1 : 0;
-            $vendor          = trim( (string) $col[7] );
-            $model           = trim( (string) $col[8] );
-            $expiry          = trim( (string) $col[9] );
-            $access_url      = trim( (string) $col[10] );
-            $notes           = (string) $col[11];
-            $tmp_enabled     = trim( (string) $col[12] ) === '1' ? 1 : 0;
-            $tmp_notice      = (string) $col[13];
+            $registration_raw = $this->get_import_value( $data, $header_map, array( 'registration_date', 'created_at' ), $registration_default );
+            $access_url      = trim( (string) $this->get_import_value( $data, $header_map, array( 'access_url' ), $access_default ) );
+            $notes           = (string) $this->get_import_value( $data, $header_map, array( 'notes' ), $notes_default );
+            $tmp_enabled     = trim( (string) $this->get_import_value( $data, $header_map, array( 'temp_notice_enabled' ), $tmp_enabled_default ) ) === '1' ? 1 : 0;
+            $tmp_notice      = (string) $this->get_import_value( $data, $header_map, array( 'temp_notice' ), $tmp_notice_default );
+            $expiry          = $this->normalize_import_date( $expiry_raw );
+            $registration_date = $this->normalize_import_date( $registration_raw );
 
             if ( $serial === '' ) {
                 $skipped++;
@@ -1327,10 +1399,10 @@ if ( $id > 0 ) {
                 $access_url = 'https://' . ltrim( $access_url );
             }
 
-            // Unique serial check (excluding trashed)
+            // Unique serial check (skip existing rows entirely)
             $exists = $wpdb->get_var( $wpdb->prepare(
-                "SELECT id FROM {$fw_table} WHERE serial_number=%s AND deleted_at IS NULL AND archived_at IS NULL AND id != %d LIMIT 1",
-                $serial, $id
+                "SELECT id FROM {$fw_table} WHERE serial_number=%s LIMIT 1",
+                $serial
             ) );
             if ( $exists ) {
                 $skipped++;
@@ -1354,17 +1426,10 @@ if ( $id > 0 ) {
             );
 
             if ( $id > 0 ) {
-                $ok = $wpdb->update( $fw_table, $payload, array( 'id' => $id ) );
-                if ( $ok === false ) {
-                    $skipped++;
-                    $errors[] = "שורה {$row_num}: עדכון נכשל: " . $wpdb->last_error;
-                    $this->log_firewall_event( $id, 'import_update', 'עדכון נכשל בייבוא', array( 'error' => $wpdb->last_error ), 'error' );
-                    continue;
-                }
-                $updated++;
-                $this->log_firewall_event( $id, 'import_update', 'עודכן רישום בייבוא' );
+                $skipped++;
+                $errors[] = "שורה {$row_num}: רשומה קיימת (לא מעודכן).";
             } else {
-                $payload['created_at'] = current_time( 'mysql' );
+                $payload['created_at'] = $registration_date ? $registration_date : current_time( 'mysql' );
                 $ok = $wpdb->insert( $fw_table, $payload );
                 if ( $ok === false ) {
                     $skipped++;
@@ -1380,6 +1445,48 @@ if ( $id > 0 ) {
         fclose( $h );
         $summary = array( "ייבוא הסתיים. נוספו {$imported}, עודכנו {$updated}, דולגו {$skipped}." );
         set_transient( 'expman_firewalls_errors', array_merge( $summary, $errors ), 120 );
+    }
+
+    private function build_import_header_map( $row ) {
+        $map = array();
+        foreach ( (array) $row as $idx => $val ) {
+            $key = strtolower( trim( (string) $val ) );
+            if ( $key === '' ) {
+                continue;
+            }
+            $map[ $key ] = $idx;
+        }
+        if ( empty( $map ) ) {
+            return array();
+        }
+        if ( isset( $map['serial number'] ) ) {
+            $map['serial_number_forticloud'] = $map['serial number'];
+        }
+        return $map;
+    }
+
+    private function get_import_value( $row, $map, $keys, $fallback = '' ) {
+        foreach ( (array) $keys as $key ) {
+            if ( isset( $map[ $key ] ) ) {
+                return $row[ $map[ $key ] ] ?? '';
+            }
+        }
+        return $fallback;
+    }
+
+    private function normalize_import_date( $value ) {
+        $value = trim( (string) $value );
+        if ( $value === '' ) {
+            return null;
+        }
+        if ( preg_match( '/^\d{4}-\d{2}-\d{2}$/', $value ) ) {
+            return $value;
+        }
+        $ts = strtotime( $value );
+        if ( $ts ) {
+            return date( 'Y-m-d', $ts );
+        }
+        return null;
     }
 
     private function normalize_assets_payload( $payload ) {
