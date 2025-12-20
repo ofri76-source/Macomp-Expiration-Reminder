@@ -1762,8 +1762,8 @@ echo '<style>.expman-frontend.expman-firewalls input,.expman-frontend.expman-fir
             Expman_Nav::render_public_nav( $this->option_key );
         }
 
-        $this->render_summary_cards();
         echo '<h2 style="margin-top:10px;">חומות אש</h2>';
+        $this->render_summary_cards();
 
         if ( ! empty( $errors ) ) {
             echo '<div class="notice notice-error"><p>' . esc_html( implode( ' | ', (array) $errors ) ) . '</p></div>';
