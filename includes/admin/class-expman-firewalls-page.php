@@ -1085,6 +1085,12 @@ if ( $id > 0 ) {
         $types_table = $wpdb->prefix . self::TABLE_TYPES;
         $cust_table  = $wpdb->prefix . 'dc_customers';
 
+        while ( ob_get_level() > 0 ) {
+            ob_end_clean();
+        }
+
+        nocache_headers();
+
         $rows = $wpdb->get_results( "
             SELECT fw.*,
                    c.customer_number AS customer_number,
@@ -1929,7 +1935,7 @@ echo '<style>.expman-frontend.expman-firewalls input,.expman-frontend.expman-fir
             'active',
             $clear_url,
             array(
-                'show_filters'        => false,
+                'show_filters'        => true,
                 'show_status_cols'    => false,
                 'show_status_filters' => false,
                 'hidden_filters'      => array(
@@ -2133,7 +2139,11 @@ echo '<style>.expman-frontend.expman-firewalls input,.expman-frontend.expman-fir
 
         echo '<h3>ארכיון (חומות אש)</h3>';
         $rows = $this->get_firewalls_rows( $filters, $orderby, $order, 'archive', null );
-        $this->render_table( $rows, $filters, $orderby, $order, 'archive', null );
+        $base = remove_query_arg( array( 'expman_msg' ) );
+        $clear_url = remove_query_arg( array(
+            'f_customer_number','f_customer_name','f_branch','f_serial_number','f_is_managed','f_track_only','f_vendor','f_model','f_expiry_date','orderby','order','highlight'
+        ), $base );
+        $this->render_table( $rows, $filters, $orderby, $order, 'archive', $clear_url );
     }
 
     private function render_logs_tab() {
@@ -2209,6 +2219,7 @@ echo '<style>.expman-frontend.expman-firewalls input,.expman-frontend.expman-fir
         $hidden_filters = (array) $options['hidden_filters'];
         $skip_keys = array_fill_keys( array_keys( $hidden_filters ), true );
 
+        echo '<div class="expman-table-wrap" data-expman-table="' . esc_attr( $uid ) . '">';
         if ( $show_filters ) {
             echo '<form method="get" style="margin:0 0 10px 0;">';
         }
@@ -2229,11 +2240,14 @@ echo '<style>.expman-frontend.expman-firewalls input,.expman-frontend.expman-fir
             echo '<script>
             (function(){
               const dataEl = document.currentScript.previousElementSibling;
+              const wrap = dataEl.closest(".expman-table-wrap");
               function get(key){try{return JSON.parse(document.getElementById("expman-ms-data-' . esc_js( $uid ) . '").dataset[key]||"[]")}catch(e){return []}}
               const optsVendor=get("vendorOptions"), optsModel=get("modelOptions");
               const selVendor=new Set(get("vendorSelected")), selModel=new Set(get("modelSelected"));
 
               function build(th, key, options, selected){
+                if(th.dataset.expmanMsBuilt){return;}
+                th.dataset.expmanMsBuilt="1";
                 const hidden=document.createElement("input");
                 hidden.type="hidden"; hidden.name = key==="vendor" ? "f_vendor" : "f_model";
                 hidden.value=Array.from(selected).join(",");
@@ -2293,8 +2307,9 @@ echo '<style>.expman-frontend.expman-firewalls input,.expman-frontend.expman-fir
                 th.closest("form").addEventListener("submit",()=>{ hidden.value=Array.from(selected).join(","); });
               }
 
-              document.querySelectorAll("th.expman-ms-wrap[data-ms=vendor]").forEach(th=>build(th,"vendor",optsVendor,selVendor));
-              document.querySelectorAll("th.expman-ms-wrap[data-ms=model]").forEach(th=>build(th,"model",optsModel,selModel));
+              if(!wrap){return;}
+              wrap.querySelectorAll("th.expman-ms-wrap[data-ms=vendor]").forEach(th=>build(th,"vendor",optsVendor,selVendor));
+              wrap.querySelectorAll("th.expman-ms-wrap[data-ms=model]").forEach(th=>build(th,"model",optsModel,selModel));
             })();
             </script>';
 
@@ -2370,6 +2385,7 @@ echo '<style>.expman-frontend.expman-firewalls input,.expman-frontend.expman-fir
             if ( $show_filters ) {
                 echo '</form>';
             }
+            echo '</div>';
             return;
         }
 
@@ -2460,6 +2476,7 @@ echo '<style>.expman-frontend.expman-firewalls input,.expman-frontend.expman-fir
         if ( $show_filters ) {
             echo '</form>';
         }
+        echo '</div>';
 
         echo '<script>(function(){
           const dataEl = document.currentScript.previousElementSibling;';
