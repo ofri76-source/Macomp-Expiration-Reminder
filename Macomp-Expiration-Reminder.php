@@ -237,9 +237,7 @@ class Expiry_Manager_Plugin {
         $this->buffer_start();
         Expman_Nav::render_public_nav( self::OPTION_KEY, self::VERSION );
         echo '<h2>Dashboard</h2>';
-        if ( class_exists( 'Expman_Firewalls_Page' ) ) {
-            Expman_Firewalls_Page::render_summary_cards_public( self::OPTION_KEY, 'חומות אש' );
-        }
+        echo '<p>דף ציבורי בסיסי.</p>';
         return $this->buffer_end();
     }
 
@@ -298,12 +296,8 @@ class Expiry_Manager_Plugin {
 
         if ( ! current_user_can( 'manage_options' ) ) { return ''; }
         $this->buffer_start();
-        if ( class_exists( 'Expman_Settings_Page' ) ) {
-            ( new Expman_Settings_Page( self::OPTION_KEY ) )->render_public_page();
-        } else {
-            Expman_Nav::render_public_nav( self::OPTION_KEY, self::VERSION );
-            echo '<p>Settings module not loaded.</p>';
-        }
+        Expman_Nav::render_public_nav( self::OPTION_KEY, self::VERSION );
+        echo '<pre>' . esc_html( print_r( get_option( self::OPTION_KEY, array() ), true ) ) . '</pre>';
         return $this->buffer_end();
     }
 
