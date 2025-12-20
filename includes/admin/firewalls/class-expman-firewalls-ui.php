@@ -85,6 +85,9 @@ class Expman_Firewalls_UI {
 .expman-frontend .button:not(.button-primary){background:#eef3fb;border-color:#9fb3d9;color:#1f3b64;}
 .expman-frontend .button:hover,.expman-frontend .button.button-primary:hover{background:#264f8f;color:#fff;}
 .expman-frontend .button:not(.button-primary):hover{background:#dfe9f7;color:#1f3b64;}
+.expman-days-green{background:#ecfbf4;}
+.expman-days-yellow{background:#fff4e7;}
+.expman-days-red{background:#ffecec;}
 </style>';
         echo '<style>.expman-frontend.expman-firewalls input,.expman-frontend.expman-firewalls select{height:28px!important;line-height:28px!important;padding:2px 6px!important;font-size:13px!important}.expman-frontend.expman-firewalls textarea{min-height:60px!important;font-size:13px!important;padding:6px!important}.expman-frontend.expman-firewalls .button{padding:4px 10px!important;height:30px!important}</style>';
         echo '<div class="expman-frontend expman-firewalls" style="direction:rtl;">';
@@ -262,12 +265,14 @@ class Expman_Firewalls_UI {
         $managed_filters['is_managed'] = '1';
 
         echo '<h3>חומות אש בניהול</h3>';
-        $rows = $actions->get_firewalls_rows( $managed_filters, $orderby, $order, 'active', 0 );
+        $managed_orderby = $orderby !== 'expiry_date' ? $orderby : 'days_to_renew';
+        $managed_order   = $orderby !== 'expiry_date' ? $order : 'ASC';
+        $rows = $actions->get_firewalls_rows( $managed_filters, $managed_orderby, $managed_order, 'active', 0 );
         $this->render_table(
             $rows,
             $managed_filters,
-            $orderby,
-            $order,
+            $managed_orderby,
+            $managed_order,
             'active',
             $clear_url,
             array(
@@ -303,25 +308,6 @@ class Expman_Firewalls_UI {
                 ),
             )
         );
-
-        // Import/Export at bottom
-        echo '<div style="margin-top:18px;border-top:1px solid #eee;padding-top:12px;">';
-        echo '<h3>ייבוא / ייצוא (Excel CSV)</h3>';
-        echo '<div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;">';
-        echo '<form method="post" style="margin:0;">';
-        wp_nonce_field( 'expman_firewalls' );
-        echo '<input type="hidden" name="expman_action" value="export_csv">';
-        echo '<button class="expman-btn secondary" type="submit">ייצוא ל-Excel (CSV)</button>';
-        echo '</form>';
-
-        echo '<form method="post" enctype="multipart/form-data" style="margin:0;">';
-        wp_nonce_field( 'expman_firewalls' );
-        echo '<input type="hidden" name="expman_action" value="import_csv">';
-        echo '<input type="hidden" name="tab" value="bulk">';
-        echo '<input type="file" name="firewalls_file" accept=".csv" required>';
-        echo '<button class="expman-btn secondary" type="submit">ייבוא מ-Excel (CSV)</button>';
-        echo '</form>';
-        echo '</div></div>';
 
         // JS: toggle add form + inline edit
         echo '<script>(function(){
@@ -643,6 +629,24 @@ class Expman_Firewalls_UI {
 
         echo '<script>(function(){var btn=document.getElementById("expman-toggle-secret");var wrap=document.getElementById("expman-secret-wrap");if(btn&&wrap){btn.addEventListener("click",function(){wrap.style.display=wrap.style.display==="none"?"block":"none";});}})();</script>';
 
+        echo '<hr style="margin:24px 0;">';
+        echo '<h3>ייבוא / ייצוא (Excel CSV)</h3>';
+        echo '<div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;">';
+        echo '<form method="post" style="margin:0;">';
+        wp_nonce_field( 'expman_firewalls' );
+        echo '<input type="hidden" name="expman_action" value="export_csv">';
+        echo '<button class="expman-btn secondary" type="submit">ייצוא ל-Excel (CSV)</button>';
+        echo '</form>';
+
+        echo '<form method="post" enctype="multipart/form-data" style="margin:0;">';
+        wp_nonce_field( 'expman_firewalls' );
+        echo '<input type="hidden" name="expman_action" value="import_csv">';
+        echo '<input type="hidden" name="tab" value="assign">';
+        echo '<input type="file" name="firewalls_file" accept=".csv" required>';
+        echo '<button class="expman-btn secondary" type="submit">ייבוא מ-Excel (CSV)</button>';
+        echo '</form>';
+        echo '</div>';
+
         $actions = $this->page->get_actions();
         $types = $actions->get_box_types();
         echo '<hr style="margin:24px 0;">';
@@ -750,6 +754,9 @@ class Expman_Firewalls_UI {
 
     private function render_table( $rows, $filters, $orderby, $order, $table_mode, $clear_url = null, $options = array() ) {
         $actions = $this->page->get_actions();
+        $summary = $actions->get_summary_counts( $this->page->get_option_key() );
+        $yellow_threshold = intval( $summary['yellow_threshold'] ?? 60 );
+        $red_threshold = intval( $summary['red_threshold'] ?? 30 );
         $base = remove_query_arg( array( 'expman_msg' ) );
         $uid  = wp_generate_uuid4();
         $options = wp_parse_args(
@@ -831,7 +838,7 @@ class Expman_Firewalls_UI {
                     const cb=document.createElement("input");
                     cb.type="checkbox"; cb.checked=selected.has(v);
                     cb.addEventListener("change",()=>{cb.checked?selected.add(v):selected.delete(v);});
-                    const span=document.createElement("span"); span.textContent=v;
+                    const span=document.createElement("span"); span.textContent=String(v); span.style.color="#1f3b64";
                     label.appendChild(cb); label.appendChild(span);
                     list.appendChild(label);
                   });
@@ -881,7 +888,7 @@ class Expman_Firewalls_UI {
         $this->th_sort( 'customer_name', 'שם לקוח', $orderby, $order, $base );
         $this->th_sort( 'branch', 'סניף', $orderby, $order, $base );
         $this->th_sort( 'serial_number', 'מספר סידורי', $orderby, $order, $base, 'expman-align-left' );
-        $this->th_sort( 'days_to_renew', 'ימים לחידוש', $orderby, $order, $base );
+        $this->th_sort( 'days_to_renew', 'ימים לחידוש', $orderby, $order, $base, 'expman-align-left' );
         $this->th_sort( 'vendor', 'יצרן', $orderby, $order, $base, 'expman-align-left' );
         $this->th_sort( 'model', 'דגם', $orderby, $order, $base, 'expman-align-left' );
         if ( $show_status_cols ) {
@@ -951,6 +958,16 @@ class Expman_Firewalls_UI {
             } else {
                 $days = '';
             }
+            $days_class = '';
+            if ( $days !== '' ) {
+                if ( $days <= $red_threshold ) {
+                    $days_class = 'expman-days-red';
+                } elseif ( $days <= $yellow_threshold ) {
+                    $days_class = 'expman-days-yellow';
+                } else {
+                    $days_class = 'expman-days-green';
+                }
+            }
 
             $access_btn = '';
             if ( ! empty( $r->access_url ) ) {
@@ -971,7 +988,7 @@ class Expman_Firewalls_UI {
             echo '<td>' . esc_html( $r->customer_name ?? '' ) . '</td>';
             echo '<td>' . esc_html( $r->branch ?? '' ) . '</td>';
             echo '<td class="expman-align-left">' . esc_html( $r->serial_number ) . '</td>';
-            echo '<td>' . esc_html( $days ) . '</td>';
+            echo '<td class="expman-align-left ' . esc_attr( $days_class ) . '">' . esc_html( $days ) . '</td>';
             echo '<td class="expman-align-left">' . esc_html( $r->vendor ?? '' ) . '</td>';
             echo '<td class="expman-align-left">' . esc_html( $r->model ?? '' ) . '</td>';
             if ( $show_status_cols ) {

@@ -126,6 +126,9 @@ class Expman_Firewalls_Page {
         if ( ! in_array( 'archived_at', $names, true ) ) {
             $wpdb->query( "ALTER TABLE {$fw_table} ADD COLUMN archived_at DATETIME NULL AFTER updated_at" );
         }
+        if ( ! in_array( 'deleted_at', $names, true ) ) {
+            $wpdb->query( "ALTER TABLE {$fw_table} ADD COLUMN deleted_at DATETIME NULL AFTER archived_at" );
+        }
     }
 
     public function add_notice( $message, $type = 'success' ) {
