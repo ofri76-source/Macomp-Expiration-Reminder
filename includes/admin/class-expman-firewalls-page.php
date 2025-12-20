@@ -1732,6 +1732,10 @@ if ( $id > 0 ) {
         echo '<style>/* expman-compact-fields */
 .expman-filter-row input,.expman-filter-row select{height:24px !important;padding:4px 6px !important;font-size:12px !important;border:1px solid #c7d1e0;border-radius:4px;background:#fff;}
 .expman-filter-row th{background:#e8f0fb !important;border-bottom:2px solid #c7d1e0;}
+.expman-align-left{text-align:left !important;}
+.expman-align-left input,
+.expman-align-left select,
+.expman-align-left button{direction:ltr;text-align:left !important;}
 .fw-form input,.fw-form select{height:24px !important;padding:3px 6px !important;font-size:13px !important;}
 .fw-form textarea{min-height:60px !important;font-size:13px !important;}
 .expman-btn{padding:6px 12px !important;font-size:12px !important;border-radius:6px;border:1px solid #254d8c;background:#2f5ea8;color:#fff;display:inline-block;line-height:1.2;box-shadow:0 1px 0 rgba(0,0,0,0.05);cursor:pointer;text-decoration:none;}
@@ -1888,9 +1892,51 @@ echo '<style>.expman-frontend.expman-firewalls input,.expman-frontend.expman-fir
         $this->render_form( 0 );
         echo '</div>';
 
-        echo '<h3>רשימה ראשית</h3>';
-        $rows = $this->get_firewalls_rows( $filters, $orderby, $order, 'active', null );
-        $this->render_table( $rows, $filters, $orderby, $order, 'active', $clear_url );
+        $managed_filters = $filters;
+        $managed_filters['is_managed'] = '1';
+
+        echo '<h3>חומות אש בניהול</h3>';
+        $rows = $this->get_firewalls_rows( $managed_filters, $orderby, $order, 'active', 0 );
+        $this->render_table(
+            $rows,
+            $managed_filters,
+            $orderby,
+            $order,
+            'active',
+            $clear_url,
+            array(
+                'show_filters'        => true,
+                'show_status_cols'    => false,
+                'show_status_filters' => false,
+                'hidden_filters'      => array(
+                    'f_is_managed' => '1',
+                    'f_track_only' => '0',
+                ),
+            )
+        );
+
+        $tracking_filters = $filters;
+        $tracking_filters['is_managed'] = '';
+        $tracking_filters['track_only'] = '1';
+
+        echo '<h3 style="margin-top:18px;">חומות אש למעקב</h3>';
+        $rows = $this->get_firewalls_rows( $tracking_filters, $orderby, $order, 'active', 1 );
+        $this->render_table(
+            $rows,
+            $tracking_filters,
+            $orderby,
+            $order,
+            'active',
+            $clear_url,
+            array(
+                'show_filters'        => false,
+                'show_status_cols'    => false,
+                'show_status_filters' => false,
+                'hidden_filters'      => array(
+                    'f_track_only' => '1',
+                ),
+            )
+        );
 
         // Import/Export at bottom
         echo '<div style="margin-top:18px;border-top:1px solid #eee;padding-top:12px;">';
@@ -2145,10 +2191,23 @@ echo '<style>.expman-frontend.expman-firewalls input,.expman-frontend.expman-fir
         return $vals;
     }
 
-    private function render_table( $rows, $filters, $orderby, $order, $table_mode, $clear_url = null ) {
+    private function render_table( $rows, $filters, $orderby, $order, $table_mode, $clear_url = null, $options = array() ) {
         $base = remove_query_arg( array( 'expman_msg' ) );
         $uid  = wp_generate_uuid4();
-        $show_filters = true;
+        $options = wp_parse_args(
+            $options,
+            array(
+                'show_filters'        => true,
+                'show_status_cols'    => true,
+                'show_status_filters' => true,
+                'hidden_filters'      => array(),
+            )
+        );
+        $show_filters = (bool) $options['show_filters'];
+        $show_status_cols = (bool) $options['show_status_cols'];
+        $show_status_filters = (bool) $options['show_status_filters'];
+        $hidden_filters = (array) $options['hidden_filters'];
+        $skip_keys = array_fill_keys( array_keys( $hidden_filters ), true );
 
         if ( $show_filters ) {
             echo '<form method="get" style="margin:0 0 10px 0;">';
@@ -2239,7 +2298,12 @@ echo '<style>.expman-frontend.expman-firewalls input,.expman-frontend.expman-fir
             })();
             </script>';
 
+            foreach ( $hidden_filters as $name => $value ) {
+                echo '<input type="hidden" name="' . esc_attr( $name ) . '" value="' . esc_attr( $value ) . '">';
+            }
+
             foreach ( $_GET as $k => $v ) {
+                if ( isset( $skip_keys[ $k ] ) ) { continue; }
                 if ( strpos( $k, 'f_' ) === 0 || in_array( $k, array( 'orderby','order' ), true ) ) { continue; }
                 echo '<input type="hidden" name="' . esc_attr( $k ) . '" value="' . esc_attr( $v ) . '">';
             }
@@ -2251,12 +2315,14 @@ echo '<style>.expman-frontend.expman-firewalls input,.expman-frontend.expman-fir
         $this->th_sort( 'customer_number', 'מספר לקוח', $orderby, $order, $base );
         $this->th_sort( 'customer_name', 'שם לקוח', $orderby, $order, $base );
         $this->th_sort( 'branch', 'סניף', $orderby, $order, $base );
-        $this->th_sort( 'serial_number', 'מספר סידורי', $orderby, $order, $base );
+        $this->th_sort( 'serial_number', 'מספר סידורי', $orderby, $order, $base, 'expman-align-left' );
         $this->th_sort( 'days_to_renew', 'ימים לחידוש', $orderby, $order, $base );
-        $this->th_sort( 'vendor', 'יצרן', $orderby, $order, $base );
-        $this->th_sort( 'model', 'דגם', $orderby, $order, $base );
-        $this->th_sort( 'is_managed', 'ניהול', $orderby, $order, $base );
-        $this->th_sort( 'track_only', 'מעקב', $orderby, $order, $base );
+        $this->th_sort( 'vendor', 'יצרן', $orderby, $order, $base, 'expman-align-left' );
+        $this->th_sort( 'model', 'דגם', $orderby, $order, $base, 'expman-align-left' );
+        if ( $show_status_cols ) {
+            $this->th_sort( 'is_managed', 'ניהול', $orderby, $order, $base );
+            $this->th_sort( 'track_only', 'מעקב', $orderby, $order, $base );
+        }
         echo '<th>גישה</th>';
         echo '<th>פעולות</th>';
         echo '</tr>';
@@ -2267,20 +2333,25 @@ echo '<style>.expman-frontend.expman-firewalls input,.expman-frontend.expman-fir
             echo '<th><input style="width:100%" name="f_customer_number" value="' . esc_attr( $filters['customer_number'] ) . '" placeholder="סינון..."></th>';
             echo '<th><input style="width:100%" name="f_customer_name" value="' . esc_attr( $filters['customer_name'] ) . '" placeholder="סינון..."></th>';
             echo '<th><input style="width:100%" name="f_branch" value="' . esc_attr( $filters['branch'] ) . '" placeholder="סינון..."></th>';
-            echo '<th><input style="width:100%" name="f_serial_number" value="' . esc_attr( $filters['serial_number'] ) . '" placeholder="סינון..."></th>';
+            echo '<th class="expman-align-left"><input style="width:100%" name="f_serial_number" value="' . esc_attr( $filters['serial_number'] ) . '" placeholder="סינון..."></th>';
             echo '<th></th>'; // days_to_renew
-            echo '<th class="expman-ms-wrap" data-ms="vendor"></th>';
-            echo '<th class="expman-ms-wrap" data-ms="model"></th>';
-            echo '<th><select name="f_is_managed" style="width:100%;">';
-            echo '<option value="">הכל</option>';
-            echo '<option value="1" ' . selected( $filters['is_managed'], '1', false ) . '>שלנו</option>';
-            echo '<option value="0" ' . selected( $filters['is_managed'], '0', false ) . '>לא שלנו</option>';
-            echo '</select></th>';
-            echo '<th><select name="f_track_only" style="width:100%;">';
-            echo '<option value="">הכל</option>';
-            echo '<option value="1" ' . selected( $filters['track_only'], '1', false ) . '>כן</option>';
-            echo '<option value="0" ' . selected( $filters['track_only'], '0', false ) . '>לא</option>';
-            echo '</select></th>';
+            echo '<th class="expman-ms-wrap expman-align-left" data-ms="vendor"></th>';
+            echo '<th class="expman-ms-wrap expman-align-left" data-ms="model"></th>';
+            if ( $show_status_cols && $show_status_filters ) {
+                echo '<th><select name="f_is_managed" style="width:100%;">';
+                echo '<option value="">הכל</option>';
+                echo '<option value="1" ' . selected( $filters['is_managed'], '1', false ) . '>שלנו</option>';
+                echo '<option value="0" ' . selected( $filters['is_managed'], '0', false ) . '>לא שלנו</option>';
+                echo '</select></th>';
+                echo '<th><select name="f_track_only" style="width:100%;">';
+                echo '<option value="">הכל</option>';
+                echo '<option value="1" ' . selected( $filters['track_only'], '1', false ) . '>כן</option>';
+                echo '<option value="0" ' . selected( $filters['track_only'], '0', false ) . '>לא</option>';
+                echo '</select></th>';
+            } elseif ( $show_status_cols ) {
+                echo '<th></th>';
+                echo '<th></th>';
+            }
             echo '<th></th>'; // access
             echo '<th style="white-space:nowrap;">';
             echo '<button class="expman-btn secondary" type="submit">סנן</button> ';
@@ -2293,8 +2364,9 @@ echo '<style>.expman-frontend.expman-firewalls input,.expman-frontend.expman-fir
 
         echo '</thead><tbody>';
 
+        $column_count = $show_status_cols ? 11 : 9;
         if ( empty( $rows ) ) {
-            echo '<tr><td colspan="11">אין נתונים.</td></tr></tbody></table>';
+            echo '<tr><td colspan="' . esc_attr( $column_count ) . '">אין נתונים.</td></tr></tbody></table>';
             if ( $show_filters ) {
                 echo '</form>';
             }
@@ -2324,12 +2396,14 @@ echo '<style>.expman-frontend.expman-firewalls input,.expman-frontend.expman-fir
                         echo '<td>' . esc_html( $r->customer_number ?? '' ) . '</td>';
             echo '<td>' . esc_html( $r->customer_name ?? '' ) . '</td>';
             echo '<td>' . esc_html( $r->branch ?? '' ) . '</td>';
-            echo '<td>' . esc_html( $r->serial_number ) . '</td>';
+            echo '<td class="expman-align-left">' . esc_html( $r->serial_number ) . '</td>';
                         echo '<td>' . esc_html( $days ) . '</td>';
-            echo '<td>' . esc_html( $r->vendor ?? '' ) . '</td>';
-            echo '<td>' . esc_html( $r->model ?? '' ) . '</td>';
-            echo '<td>' . esc_html( $managed_label ) . '</td>';
-            echo '<td>' . esc_html( intval( $r->track_only ) ? 'כן' : 'לא' ) . '</td>';
+            echo '<td class="expman-align-left">' . esc_html( $r->vendor ?? '' ) . '</td>';
+            echo '<td class="expman-align-left">' . esc_html( $r->model ?? '' ) . '</td>';
+            if ( $show_status_cols ) {
+                echo '<td>' . esc_html( $managed_label ) . '</td>';
+                echo '<td>' . esc_html( intval( $r->track_only ) ? 'כן' : 'לא' ) . '</td>';
+            }
             echo '<td>' . $access_btn . '</td>';
 
             echo '<td style="white-space:nowrap;" onclick="event.stopPropagation();">';
@@ -2367,13 +2441,13 @@ echo '<style>.expman-frontend.expman-firewalls input,.expman-frontend.expman-fir
 
             // Inline edit form row (hidden)
             echo '<tr class="expman-inline-form" data-for="' . esc_attr( $r->id ) . '" style="display:none;background:#fff;">';
-            echo '<td colspan="11">';
+            echo '<td colspan="' . esc_attr( $column_count ) . '">';
             $this->render_form( intval( $r->id ), $r );
             echo '</td></tr>';
 
             // Details row (click row expands)
             echo '<tr class="expman-details" data-for="' . esc_attr( $r->id ) . '" style="display:none;background:#fafafa;">';
-            echo '<td colspan="11">';
+            echo '<td colspan="' . esc_attr( $column_count ) . '">';
             echo '<div style="display:flex;gap:20px;flex-wrap:wrap;">';
             echo '<div style="min-width:260px;"><strong>הערה קבועה:</strong><div style="white-space:pre-wrap;">' . esc_html( (string) $r->notes ) . '</div></div>';
             echo '<div style="min-width:260px;"><strong>הודעה זמנית:</strong><div style="white-space:pre-wrap;">' . esc_html( intval( $r->temp_notice_enabled ) ? (string) $r->temp_notice : '' ) . '</div></div>';
@@ -2397,10 +2471,11 @@ echo '<style>.expman-frontend.expman-firewalls input,.expman-frontend.expman-fir
         echo '})();</script>';
     }
 
-    private function th_sort( $key, $label, $orderby, $order, $base ) {
+    private function th_sort( $key, $label, $orderby, $order, $base, $class = '' ) {
         $next_order = ( $orderby === $key && strtoupper( $order ) === 'ASC' ) ? 'DESC' : 'ASC';
         $url = add_query_arg( array( 'orderby' => $key, 'order' => $next_order ), $base );
-        echo '<th><a href="' . esc_url( $url ) . '" style="text-decoration:none;">' . esc_html( $label ) . '</a></th>';
+        $class_attr = $class !== '' ? ' class="' . esc_attr( $class ) . '"' : '';
+        echo '<th' . $class_attr . '><a href="' . esc_url( $url ) . '" style="text-decoration:none;">' . esc_html( $label ) . '</a></th>';
     }
 
     private function render_form( $id = 0, $row_obj = null ) {
