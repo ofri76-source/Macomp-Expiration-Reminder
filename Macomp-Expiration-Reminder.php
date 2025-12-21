@@ -2,7 +2,7 @@
 /*
 Plugin Name: Macomp Expiration Reminder
 Description: מערכת ניהול תאריכי תפוגה לרכיבים (חומות אש, תעודות, דומיינים, שרתים).
-Version: 19.8.4
+Version: 21.9.49
 Author: O.k Software
 Text Domain: expiry-manager
 */
@@ -22,7 +22,7 @@ class Expiry_Manager_Plugin {
     const DB_TABLE_ITEMS = 'exp_items';
     const DB_TABLE_LOGS  = 'exp_logs';
     const OPTION_KEY     = 'expman_settings';
-    const VERSION = '19.8.4';
+    const VERSION = '21.9.49';
 
     private static $instance = null;
 
