@@ -553,15 +553,21 @@ class Expman_Firewalls_Actions {
             ob_end_clean();
         }
 
-        nocache_headers();
+        if ( headers_sent() ) {
+            set_transient( 'expman_firewalls_errors', array( 'לא ניתן לשלוח כותרות הורדה (Headers כבר נשלחו). הקובץ יוצג בדפדפן.' ), 90 );
+        } else {
+            nocache_headers();
+        }
 
         $rows = $wpdb->get_results( "
             SELECT fw.*,\n                   c.customer_number AS customer_number,\n                   c.customer_name AS customer_name,\n                   bt.vendor, bt.model\n            FROM {$fw_table} fw\n            LEFT JOIN {$cust_table} c ON c.id = fw.customer_id\n            LEFT JOIN {$types_table} bt ON bt.id = fw.box_type_id\n            WHERE 1=1\n            ORDER BY fw.id ASC\n        " );
 
         $filename = 'firewalls-template-' . date( 'Ymd-His' ) . '.csv';
-        header( 'Content-Type: text/csv; charset=UTF-8' );
-        header( 'Content-Encoding: UTF-8' );
-        header( 'Content-Disposition: attachment; filename=' . $filename );
+        if ( ! headers_sent() ) {
+            header( 'Content-Type: text/csv; charset=UTF-8' );
+            header( 'Content-Encoding: UTF-8' );
+            header( 'Content-Disposition: attachment; filename=' . $filename );
+        }
 
         $out = fopen( 'php://output', 'w' );
         fputs( $out, "\xEF\xBB\xBF" );
@@ -616,7 +622,7 @@ class Expman_Firewalls_Actions {
         return $wpdb->get_results( "SELECT id, vendor, model FROM {$types_table} ORDER BY vendor ASC, model ASC" );
     }
 
-    public function get_firewalls_rows( $filters, $orderby, $order, $status = 'active', $track_only = null ) {
+    public function get_firewalls_rows( $filters, $orderby, $order, $status = 'active', $track_only = null, $limit = 0, $offset = 0 ) {
         global $wpdb;
 
         $fw_table    = $wpdb->prefix . Expman_Firewalls_Page::TABLE_FIREWALLS;
@@ -737,6 +743,12 @@ class Expman_Firewalls_Actions {
             ORDER BY {$orderby_sql} {$order_sql}, fw.id DESC
         ";
 
+        if ( $limit > 0 ) {
+            $sql .= " LIMIT %d OFFSET %d";
+            $params[] = intval( $limit );
+            $params[] = intval( $offset );
+        }
+
         if ( ! empty( $params ) ) {
             $sql = $wpdb->prepare( $sql, $params );
         }
@@ -747,7 +759,7 @@ class Expman_Firewalls_Actions {
     public function get_summary_counts( $option_key ) {
         global $wpdb;
         $settings = get_option( $option_key, array() );
-        $yellow   = intval( $settings['yellow_threshold'] ?? 60 );
+        $yellow   = intval( $settings['yellow_threshold'] ?? 90 );
         $red      = intval( $settings['red_threshold'] ?? 30 );
         $fw_table = $wpdb->prefix . Expman_Firewalls_Page::TABLE_FIREWALLS;
 

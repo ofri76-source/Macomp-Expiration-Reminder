@@ -93,12 +93,13 @@ class Expiry_Manager_Plugin {
 
         if ( ! get_option( self::OPTION_KEY ) ) {
             add_option( self::OPTION_KEY, array(
-                'yellow_threshold'   => 60,
+                'yellow_threshold'   => 90,
                 'red_threshold'      => 30,
                 'log_retention_days' => 90,
                 'customers_table'    => $wpdb->prefix . 'customers',
                 'public_urls'        => array(),
                 'env'                => 'test',
+                'show_bulk_tab'      => 1,
             ) );
         }
     }

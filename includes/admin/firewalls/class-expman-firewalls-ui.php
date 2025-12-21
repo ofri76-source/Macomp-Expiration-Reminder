@@ -34,13 +34,12 @@ class Expman_Firewalls_UI {
             .expman-summary-card.green{background:#ecfbf4;border-color:#bfead4;}
             .expman-summary-card.yellow{background:#fff4e7;border-color:#ffd3a6;}
             .expman-summary-card.red{background:#ffecec;border-color:#f3b6b6;}
-            .expman-summary-card.all{background:#f2f4f7;border-color:#d5dbe4;}
             .expman-summary-card.green .count{background:#c9f1dd;color:#1b5a39;}
             .expman-summary-card.yellow .count{background:#ffe2c6;color:#7a4c11;}
             .expman-summary-card.red .count{background:#ffd1d1;color:#7a1f1f;}
-            .expman-summary-card.all .count{background:#e1e5ea;color:#2b3f5c;}
             .expman-summary-card[data-active="1"]{box-shadow:0 0 0 2px rgba(47,94,168,0.18);}
             .expman-summary-meta{margin-top:8px;padding:8px 12px;border-radius:10px;border:1px solid #d9e3f2;background:#f8fafc;font-weight:600;color:#2b3f5c;}
+            .expman-summary-meta button{all:unset;cursor:pointer;}
             </style>';
             $summary_css_done = true;
         }
@@ -52,17 +51,17 @@ class Expman_Firewalls_UI {
         $yellow_label = 'עד ' . intval( $data['yellow_threshold'] ) . ' ימים';
 
         echo '<div class="expman-summary">';
-        echo '<div class="expman-summary-card all" data-expman-status="all" data-active="1"><button type="button"><h4>הכל</h4><div class="count">' . esc_html( $data['total'] ) . '</div></button></div>';
         echo '<div class="expman-summary-card green" data-expman-status="green" data-active="0"><button type="button"><h4>תוקף מעל ' . esc_html( $data['yellow_threshold'] ) . ' יום</h4><div class="count">' . esc_html( $data['green'] ) . '</div></button></div>';
         echo '<div class="expman-summary-card yellow" data-expman-status="yellow" data-active="0"><button type="button"><h4>' . esc_html( $yellow_label ) . '</h4><div class="count">' . esc_html( $data['yellow'] ) . '</div></button></div>';
         echo '<div class="expman-summary-card red" data-expman-status="red" data-active="0"><button type="button"><h4>דורש טיפול מייד</h4><div class="count">' . esc_html( $data['red'] ) . '</div></button></div>';
         echo '</div>';
-        echo '<div class="expman-summary-meta">סה״כ רשומות פעילות: ' . esc_html( $data['total'] ) . ' | בארכיון: ' . esc_html( $data['archived'] ) . '</div>';
+        echo '<div class="expman-summary-meta" data-expman-status="all"><button type="button">סה״כ רשומות פעילות: ' . esc_html( $data['total'] ) . ' | בארכיון: ' . esc_html( $data['archived'] ) . '</button></div>';
     }
 
     public function render() {
         $errors = get_transient( 'expman_firewalls_errors' );
         delete_transient( 'expman_firewalls_errors' );
+        $show_bulk_tab = $this->is_bulk_tab_enabled();
 
         echo '<style>/* expman-compact-fields */
 .expman-filter-row input,.expman-filter-row select{height:24px !important;padding:4px 6px !important;font-size:12px !important;border:1px solid #c7d1e0;border-radius:4px;background:#fff;}
@@ -94,10 +93,11 @@ class Expman_Firewalls_UI {
 .expman-frontend .button:not(.button-primary){background:#eef3fb;border-color:#9fb3d9;color:#1f3b64;}
 .expman-frontend .button:hover,.expman-frontend .button.button-primary:hover{background:#264f8f;color:#fff;}
 .expman-frontend .button:not(.button-primary):hover{background:#dfe9f7;color:#1f3b64;}
+.expman-days-pill{display:inline-flex;align-items:center;justify-content:center;min-width:36px;padding:3px 10px;border-radius:999px;font-weight:700;font-size:12px;line-height:1;}
 .expman-days-green{background:transparent;}
-.expman-days-yellow{background:#fff4e7;}
-.expman-days-red{background:#ffecec;}
-.expman-days-unknown{background:#f1f3f6;}
+.expman-days-yellow{background:#ffe4b8;color:#7a4c11;}
+.expman-days-red{background:#ffd1d1;color:#7a1f1f;}
+.expman-days-unknown{background:#e2e6eb;color:#2b3f5c;}
 .expman-center{text-align:center !important;}
 .expman-serial-col{width:20ch;}
 .expman-customer-col{width:8ch;}
@@ -119,6 +119,7 @@ class Expman_Firewalls_UI {
           }
           function applyFilter(status){
             document.querySelectorAll(".expman-table-wrap").forEach(function(wrap){
+              wrap.dataset.expmanStatusFilter = status;
               wrap.querySelectorAll("tr.expman-row").forEach(function(row){
                 var rowStatus=row.getAttribute("data-expman-status")||"";
                 var rowId=row.getAttribute("data-expman-row-id");
@@ -133,7 +134,7 @@ class Expman_Firewalls_UI {
               });
             });
           }
-          document.querySelectorAll(".expman-summary-card").forEach(function(card){
+          document.querySelectorAll(".expman-summary-card, .expman-summary-meta").forEach(function(card){
             card.addEventListener("click",function(){
               var status=card.getAttribute("data-expman-status");
               if(!status){return;}
@@ -141,6 +142,8 @@ class Expman_Firewalls_UI {
               applyFilter(status);
             });
           });
+          setActive("all");
+          applyFilter("all");
         })();</script>';
 
         if ( ! empty( $errors ) ) {
@@ -186,16 +189,18 @@ class Expman_Firewalls_UI {
             echo '<div class="notice notice-' . esc_attr( $type ) . '"><p>' . esc_html( $notice['text'] ) . '</p></div>';
         }
 
-        $active = $this->get_active_tab();
-        $this->render_internal_tabs( $active );
+        $active = $this->get_active_tab( $show_bulk_tab );
+        $this->render_internal_tabs( $active, $show_bulk_tab );
 
         echo '<div data-expman-panel="main"' . ( $active === 'main' ? '' : ' style="display:none;"' ) . '>';
         $this->render_main_tab();
         echo '</div>';
 
-        echo '<div data-expman-panel="bulk"' . ( $active === 'bulk' ? '' : ' style="display:none;"' ) . '>';
-        $this->render_bulk_tab();
-        echo '</div>';
+        if ( $show_bulk_tab ) {
+            echo '<div data-expman-panel="bulk"' . ( $active === 'bulk' ? '' : ' style="display:none;"' ) . '>';
+            $this->render_bulk_tab();
+            echo '</div>';
+        }
 
         echo '<div data-expman-panel="assign"' . ( $active === 'assign' ? '' : ' style="display:none;"' ) . '>';
         $this->render_assign_tab();
@@ -222,23 +227,28 @@ class Expman_Firewalls_UI {
         echo '</div>';
     }
 
-    private function get_active_tab() {
-        $allowed = array( 'main', 'bulk', 'assign', 'settings', 'trash', 'logs', 'archive' );
+    private function get_active_tab( $show_bulk_tab = true ) {
+        $allowed = array( 'main', 'assign', 'settings', 'trash', 'logs', 'archive' );
+        if ( $show_bulk_tab ) {
+            $allowed[] = 'bulk';
+        }
         $tab = sanitize_key( $_REQUEST['tab'] ?? 'main' );
         return in_array( $tab, $allowed, true ) ? $tab : 'main';
     }
 
-    private function render_internal_tabs( $active ) {
+    private function render_internal_tabs( $active, $show_bulk_tab ) {
         // JS tabs (no page reload)
         $tabs = array(
             'main'     => 'רשימה ראשית',
-            'bulk'     => 'עריכה קבוצתית',
-            'assign'   => 'שיוך לאחר ייבוא',
-            'settings' => 'הגדרות',
-            'logs'     => 'לוגים',
-            'trash'    => 'סל מחזור',
-            'archive'  => 'ארכיון',
         );
+        if ( $show_bulk_tab ) {
+            $tabs['bulk'] = 'עריכה קבוצתית';
+        }
+        $tabs['assign'] = 'שיוך לאחר ייבוא';
+        $tabs['settings'] = 'הגדרות';
+        $tabs['logs'] = 'לוגים';
+        $tabs['trash'] = 'סל מחזור';
+        $tabs['archive'] = 'ארכיון';
 
         echo '<style>
         .expman-internal-tabs{display:flex;gap:10px;flex-wrap:wrap;justify-content:flex-end;margin:10px 0;padding:8px;border-radius:10px;background:#f4f7fb;border:1px solid #d9e3f2;}
@@ -271,6 +281,11 @@ class Expman_Firewalls_UI {
         })();</script>' . "\n";
     }
 
+    private function is_bulk_tab_enabled() {
+        $settings = get_option( $this->page->get_option_key(), array() );
+        return ! isset( $settings['show_bulk_tab'] ) || $settings['show_bulk_tab'];
+    }
+
     private function common_filters_from_get() {
         return array(
             'customer_number' => sanitize_text_field( $_GET['f_customer_number'] ?? '' ),
@@ -285,15 +300,25 @@ class Expman_Firewalls_UI {
         );
     }
 
+    private function get_per_page() {
+        $per_page = intval( $_GET['per_page'] ?? 20 );
+        $allowed = array( 20, 50, 100, 200 );
+        if ( ! in_array( $per_page, $allowed, true ) ) {
+            $per_page = 20;
+        }
+        return $per_page;
+    }
+
     private function render_main_tab() {
         $actions = $this->page->get_actions();
         $filters = $this->common_filters_from_get();
         $orderby = sanitize_key( $_GET['orderby'] ?? 'expiry_date' );
         $order   = sanitize_key( $_GET['order'] ?? 'ASC' );
+        $per_page = $this->get_per_page();
 
         $base = remove_query_arg( array( 'expman_msg' ) );
         $clear_url = remove_query_arg( array(
-            'f_customer_number','f_customer_name','f_branch','f_serial_number','f_is_managed','f_track_only','f_vendor','f_model','f_expiry_date','orderby','order','highlight'
+            'f_customer_number','f_customer_name','f_branch','f_serial_number','f_is_managed','f_track_only','f_vendor','f_model','f_expiry_date','orderby','order','highlight','per_page'
         ), $base );
 
         echo '<div style="display:flex;gap:10px;justify-content:flex-end;flex-wrap:wrap;margin:10px 0;">';
@@ -311,7 +336,7 @@ class Expman_Firewalls_UI {
         echo '<h3>חומות אש בניהול</h3>';
         $managed_orderby = $orderby !== 'expiry_date' ? $orderby : 'days_to_renew';
         $managed_order   = $orderby !== 'expiry_date' ? $order : 'ASC';
-        $rows = $actions->get_firewalls_rows( $managed_filters, $managed_orderby, $managed_order, 'active', 0 );
+        $rows = $actions->get_firewalls_rows( $managed_filters, $managed_orderby, $managed_order, 'active', 0, $per_page, 0 );
         $this->render_table(
             $rows,
             $managed_filters,
@@ -335,7 +360,7 @@ class Expman_Firewalls_UI {
         $tracking_filters['track_only'] = '1';
 
         echo '<h3 style="margin-top:18px;">חומות אש למעקב</h3>';
-        $rows = $actions->get_firewalls_rows( $tracking_filters, $orderby, $order, 'active', 1 );
+        $rows = $actions->get_firewalls_rows( $tracking_filters, $orderby, $order, 'active', 1, $per_page, 0 );
         $this->render_table(
             $rows,
             $tracking_filters,
@@ -811,7 +836,7 @@ class Expman_Firewalls_UI {
         $order   = sanitize_key( $_GET['order'] ?? 'DESC' );
 
         echo '<h3>סל מחזור (חומות אש)</h3>';
-        $rows = $actions->get_firewalls_rows( $filters, $orderby, $order, 'trash', null );
+        $rows = $actions->get_firewalls_rows( $filters, $orderby, $order, 'trash', null, $this->get_per_page(), 0 );
         $this->render_table( $rows, $filters, $orderby, $order, 'trash', null );
     }
 
@@ -822,10 +847,10 @@ class Expman_Firewalls_UI {
         $order   = sanitize_key( $_GET['order'] ?? 'DESC' );
 
         echo '<h3>ארכיון (חומות אש)</h3>';
-        $rows = $actions->get_firewalls_rows( $filters, $orderby, $order, 'archive', null );
+        $rows = $actions->get_firewalls_rows( $filters, $orderby, $order, 'archive', null, $this->get_per_page(), 0 );
         $base = remove_query_arg( array( 'expman_msg' ) );
         $clear_url = remove_query_arg( array(
-            'f_customer_number','f_customer_name','f_branch','f_serial_number','f_is_managed','f_track_only','f_vendor','f_model','f_expiry_date','orderby','order','highlight'
+            'f_customer_number','f_customer_name','f_branch','f_serial_number','f_is_managed','f_track_only','f_vendor','f_model','f_expiry_date','orderby','order','highlight','per_page'
         ), $base );
         $this->render_table( $rows, $filters, $orderby, $order, 'archive', $clear_url );
     }
@@ -845,7 +870,8 @@ class Expman_Firewalls_UI {
             return;
         }
 
-        echo '<table class="widefat striped">';
+        echo '<div style="width:100%;overflow-x:auto;">';
+        echo '<table class="widefat striped" style="width:100%;">';
         echo '<thead><tr>';
         echo '<th>זמן</th>';
         echo '<th>פעולה</th>';
@@ -874,6 +900,7 @@ class Expman_Firewalls_UI {
         }
 
         echo '</tbody></table>';
+        echo '</div>';
     }
 
     private function render_table( $rows, $filters, $orderby, $order, $table_mode, $clear_url = null, $options = array() ) {
@@ -1051,6 +1078,15 @@ class Expman_Firewalls_UI {
             }
             echo '<th></th>'; // access
             echo '<th style="white-space:nowrap;">';
+            $per_page = $this->get_per_page();
+            echo '<label style="display:inline-flex;align-items:center;gap:6px;margin-left:8px;">';
+            echo '<span style="font-size:12px;color:#1f3b64;">הצג</span>';
+            echo '<select name="per_page" style="min-width:80px;">';
+            foreach ( array( 20, 50, 100, 200 ) as $opt ) {
+                echo '<option value="' . esc_attr( $opt ) . '" ' . selected( $per_page, $opt, false ) . '>' . esc_html( $opt ) . '</option>';
+            }
+            echo '</select>';
+            echo '</label>';
             if ( $clear_url ) {
                 echo '<a class="expman-btn secondary" style="display:inline-block;text-decoration:none;" href="' . esc_url( $clear_url ) . '">נקה</a>';
             }
@@ -1101,6 +1137,10 @@ class Expman_Firewalls_UI {
                 $days_class = 'expman-days-unknown';
                 $status_key = 'unknown';
             }
+            if ( intval( $r->track_only ) === 1 ) {
+                $days_class = 'expman-days-unknown';
+                $status_key = 'unknown';
+            }
             $status_key = $days_class !== '' ? str_replace( 'expman-days-', '', $days_class ) : 'unknown';
 
             $access_btn = '';
@@ -1117,12 +1157,14 @@ class Expman_Firewalls_UI {
                 $highlight = ' expman-serial-highlight';
             }
             $alt_class = ( $row_index % 2 === 0 ) ? ' expman-row-alt' : '';
-            echo '<tr class="expman-row' . esc_attr( $alt_class ) . '" style="cursor:pointer;" data-expman-row-id="' . esc_attr( $r->id ) . '" data-expman-status="' . esc_attr( $status_key ) . '">';
+            echo '<tr class="expman-row' . esc_attr( $alt_class ) . '" style="cursor:pointer;" data-expman-row-id="' . esc_attr( $r->id ) . '" data-expman-status="' . esc_attr( $status_key ) . '" data-expman-customer-number="' . esc_attr( $r->customer_number ?? '' ) . '" data-expman-customer-name="' . esc_attr( $r->customer_name ?? '' ) . '" data-expman-branch="' . esc_attr( $r->branch ?? '' ) . '" data-expman-serial="' . esc_attr( $r->serial_number ?? '' ) . '">';
             echo '<td class="expman-customer-col">' . esc_html( $r->customer_number ?? '' ) . '</td>';
             echo '<td>' . esc_html( $r->customer_name ?? '' ) . '</td>';
             echo '<td>' . esc_html( $r->branch ?? '' ) . '</td>';
             echo '<td class="expman-align-left expman-serial-col' . esc_attr( $highlight ) . '">' . esc_html( $r->serial_number ) . '</td>';
-            echo '<td class="expman-center ' . esc_attr( $days_class ) . '">' . esc_html( $days ) . '</td>';
+            $days_label = $days !== '' ? $days : '—';
+            $pill_class = $days_class !== '' ? $days_class : 'expman-days-green';
+            echo '<td class="expman-center"><span class="expman-days-pill ' . esc_attr( $pill_class ) . '">' . esc_html( $days_label ) . '</span></td>';
             echo '<td class="expman-align-left">' . esc_html( $r->vendor ?? '' ) . '</td>';
             echo '<td class="expman-align-left">' . esc_html( $r->model ?? '' ) . '</td>';
             if ( $show_status_cols ) {
@@ -1227,13 +1269,34 @@ class Expman_Firewalls_UI {
           const filterForm = wrap.querySelector("form.expman-filter-form");
           if(filterForm){
             let t=null;
-            const submit=()=>{ if(t){clearTimeout(t);} t=setTimeout(()=>filterForm.submit(), 350); };
+            const applyLocal=()=>{
+              const statusFilter = wrap.dataset.expmanStatusFilter || "all";
+              const fNumber=(filterForm.querySelector("input[name=f_customer_number]")?.value||"").toLowerCase();
+              const fName=(filterForm.querySelector("input[name=f_customer_name]")?.value||"").toLowerCase();
+              const fBranch=(filterForm.querySelector("input[name=f_branch]")?.value||"").toLowerCase();
+              const fSerial=(filterForm.querySelector("input[name=f_serial_number]")?.value||"").toLowerCase();
+              wrap.querySelectorAll("tr.expman-row").forEach(function(row){
+                const n=(row.dataset.expmanCustomerNumber||"").toLowerCase();
+                const nm=(row.dataset.expmanCustomerName||"").toLowerCase();
+                const b=(row.dataset.expmanBranch||"").toLowerCase();
+                const s=(row.dataset.expmanSerial||"").toLowerCase();
+                const statusOk = statusFilter === "all" || (row.dataset.expmanStatus || "") === statusFilter;
+                const show = statusOk
+                  && (!fNumber || n.includes(fNumber))
+                  && (!fName || nm.includes(fName))
+                  && (!fBranch || b.includes(fBranch))
+                  && (!fSerial || s.includes(fSerial));
+                row.style.display = show ? "" : "none";
+              });
+            };
+            const submit=()=>{ applyLocal(); if(t){clearTimeout(t);} t=setTimeout(()=>filterForm.submit(), 150); };
             wrap.querySelectorAll(".expman-filter-row input").forEach(function(input){
               input.addEventListener("input", submit);
             });
             wrap.querySelectorAll(".expman-filter-row select").forEach(function(select){
               select.addEventListener("change", submit);
             });
+            applyLocal();
           }';
         echo 'wrap.querySelectorAll("tr.expman-row").forEach(function(tr){tr.addEventListener("click",function(){';
         echo 'var id=tr.querySelector("a.expman-edit-btn")?tr.querySelector("a.expman-edit-btn").getAttribute("data-id"):null;';
