@@ -265,10 +265,11 @@ class Expman_Firewalls_Importer {
             }
 
             // Existing serials are staged for review/assignment instead of skipping.
-            $existing_firewall_id = $wpdb->get_var( $wpdb->prepare(
-                "SELECT id FROM {$fw_table} WHERE serial_number=%s LIMIT 1",
-                $serial
-            ) );
+            $existing_firewall = $wpdb->get_row(
+                $wpdb->prepare( "SELECT id, customer_id FROM {$fw_table} WHERE serial_number=%s LIMIT 1", $serial ),
+                ARRAY_A
+            );
+            $existing_firewall_id = $existing_firewall ? intval( $existing_firewall['id'] ) : 0;
 
             $payload = array(
                 'import_batch_id'     => $batch_id,
@@ -305,6 +306,70 @@ class Expman_Firewalls_Importer {
                     'reason'        => 'existing_row_id',
                     'payload'       => $payload,
                     'existing'      => array( 'row_id' => $id ),
+                    'last_query'    => $wpdb->last_query,
+                    'last_error'    => $wpdb->last_error,
+                ) );
+            } elseif ( $existing_firewall_id && ! empty( $existing_firewall['customer_id'] ) ) {
+                $update_payload = array(
+                    'is_managed'          => $is_managed,
+                    'track_only'          => $track_only,
+                    'updated_at'          => current_time( 'mysql' ),
+                );
+                if ( $customer_id ) {
+                    $update_payload['customer_id'] = $customer_id;
+                }
+                if ( $customer_number !== '' ) {
+                    $update_payload['customer_number'] = $customer_number;
+                }
+                if ( $customer_name !== '' ) {
+                    $update_payload['customer_name'] = $customer_name;
+                }
+                if ( $branch !== '' ) {
+                    $update_payload['branch'] = $branch;
+                }
+                if ( $box_type_id ) {
+                    $update_payload['box_type_id'] = $box_type_id;
+                }
+                if ( $expiry !== '' ) {
+                    $update_payload['expiry_date'] = $expiry;
+                }
+                if ( $access_url !== '' ) {
+                    $update_payload['access_url'] = $access_url;
+                }
+                if ( $notes !== '' ) {
+                    $update_payload['notes'] = $notes;
+                }
+                if ( $tmp_enabled ) {
+                    $update_payload['temp_notice_enabled'] = 1;
+                    $update_payload['temp_notice'] = $tmp_notice;
+                }
+
+                $ok = $wpdb->update( $fw_table, $update_payload, array( 'id' => $existing_firewall_id ) );
+                if ( $ok === false ) {
+                    $skipped++;
+                    $errors[] = "שורה {$row_num}: עדכון נכשל: " . $wpdb->last_error;
+                    $this->logger->log_firewall_event( $existing_firewall_id, 'import_update', 'עדכון חומת אש נכשל בייבוא', array(
+                        'request_id' => $request_id,
+                        'row_number' => $row_num,
+                        'serial'     => $serial,
+                        'payload'    => $update_payload,
+                        'last_error' => $wpdb->last_error,
+                    ), 'error' );
+                    continue;
+                }
+                $updated++;
+                $this->logger->log_firewall_event( $existing_firewall_id, 'import_update', 'עודכן רישום חומת אש מהייבוא', array(
+                    'request_id'    => $request_id,
+                    'row_number'    => $row_num,
+                    'serial_number' => $serial,
+                ) );
+                $this->log_import_row( 'import_update', array(
+                    'request_id'    => $request_id,
+                    'row_number'    => $row_num,
+                    'serial_number' => $serial,
+                    'reason'        => 'updated_existing_firewall',
+                    'payload'       => $update_payload,
+                    'existing'      => array( 'firewall_id' => $existing_firewall_id ),
                     'last_query'    => $wpdb->last_query,
                     'last_error'    => $wpdb->last_error,
                 ) );
@@ -398,6 +463,18 @@ class Expman_Firewalls_Importer {
         $value = trim( (string) $value );
         if ( $value === '' ) {
             return null;
+        }
+        if ( preg_match( '/^\d{2}\/\d{2}\/\d{4}$/', $value ) ) {
+            $dt = DateTime::createFromFormat( 'd/m/Y', $value );
+            if ( $dt ) {
+                return $dt->format( 'Y-m-d' );
+            }
+        }
+        if ( preg_match( '/^\d{2}\.\d{2}\.\d{4}$/', $value ) ) {
+            $dt = DateTime::createFromFormat( 'd.m.Y', $value );
+            if ( $dt ) {
+                return $dt->format( 'Y-m-d' );
+            }
         }
         if ( preg_match( '/^\d{4}-\d{2}-\d{2}$/', $value ) ) {
             return $value;
