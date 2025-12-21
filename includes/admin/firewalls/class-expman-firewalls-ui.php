@@ -1101,6 +1101,7 @@ class Expman_Firewalls_UI {
                 $days_class = 'expman-days-unknown';
                 $status_key = 'unknown';
             }
+            $status_key = $days_class !== '' ? str_replace( 'expman-days-', '', $days_class ) : 'unknown';
 
             $access_btn = '';
             if ( ! empty( $r->access_url ) ) {
