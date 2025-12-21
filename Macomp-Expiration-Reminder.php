@@ -233,6 +233,12 @@ class Expiry_Manager_Plugin {
         wp_send_json( array( 'items' => $items ) );
     }
 
+    public function init_drm_manager() {
+        if ( class_exists( 'DRM_Manager' ) ) {
+            DRM_Manager::instance();
+        }
+    }
+
 /* ---------- SHORTCODES (Public Pages) ---------- */
 
     public function register_shortcodes() {
