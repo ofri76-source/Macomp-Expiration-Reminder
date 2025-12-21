@@ -519,6 +519,10 @@ class Expman_Servers_Actions {
             ARRAY_A
         );
 
+        while ( ob_get_level() ) {
+            ob_end_clean();
+        }
+
         $filename = 'expman_servers_' . gmdate( 'Ymd_His' ) . '.csv';
         header( 'Content-Type: text/csv; charset=UTF-8' );
         header( 'Content-Disposition: attachment; filename=' . $filename );

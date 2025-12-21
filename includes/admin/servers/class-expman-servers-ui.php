@@ -328,10 +328,14 @@ class Expman_Servers_UI {
 
         echo '<script>(function(){
           const addToggle=document.getElementById("expman-add-toggle");
+          function toggleAddForm(){
+            const wrap=document.getElementById("expman-add-form-wrap");
+            if(wrap){wrap.style.display=wrap.style.display==="none"?"block":"none";}
+          }
           if(addToggle){
-            addToggle.addEventListener("click",function(){
-              const wrap=document.getElementById("expman-add-form-wrap");
-              if(wrap){wrap.style.display=wrap.style.display==="none"?"block":"none";}
+            addToggle.addEventListener("click",function(e){
+              e.preventDefault();
+              toggleAddForm();
             });
           }
           const selectAll=document.getElementById("expman-select-all");
