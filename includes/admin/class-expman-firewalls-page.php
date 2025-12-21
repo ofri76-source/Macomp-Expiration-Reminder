@@ -27,7 +27,7 @@ class Expman_Firewalls_Page {
     private $schema;
     private $forticloud;
 
-    public function __construct( $option_key, $version = '20.15.40' ) {
+    public function __construct( $option_key, $version = '21.9.49' ) {
         $this->option_key = $option_key;
         $this->version = $version;
 
@@ -171,6 +171,10 @@ class Expman_Firewalls_Page {
             case 'trash_firewall':
                 $this->action_trash_firewall();
                 break;
+            case 'delete_firewall_permanently':
+                $this->action_delete_firewall_permanently();
+                $redirect_tab = 'trash';
+                break;
             case 'restore_firewall':
                 $this->action_restore_firewall();
                 break;
@@ -245,6 +249,10 @@ class Expman_Firewalls_Page {
 
     private function action_trash_firewall() {
         $this->actions->action_trash_firewall();
+    }
+
+    private function action_delete_firewall_permanently() {
+        $this->actions->action_delete_firewall_permanently();
     }
 
     private function action_restore_firewall() {

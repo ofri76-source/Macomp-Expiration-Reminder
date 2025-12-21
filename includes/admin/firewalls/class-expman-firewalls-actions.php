@@ -478,6 +478,33 @@ class Expman_Firewalls_Actions {
         }
     }
 
+    public function action_delete_firewall_permanently() {
+        global $wpdb;
+        $fw_table = $wpdb->prefix . Expman_Firewalls_Page::TABLE_FIREWALLS;
+        $id = isset( $_POST['firewall_id'] ) ? intval( $_POST['firewall_id'] ) : 0;
+        if ( $id <= 0 ) {
+            return;
+        }
+
+        $ok = $wpdb->delete( $fw_table, array( 'id' => $id ), array( '%d' ) );
+        if ( $ok === false ) {
+            $this->logger->log_firewall_event( $id, 'delete_failed', 'מחיקה לצמיתות נכשלה', array(
+                'error' => $wpdb->last_error,
+                'query' => $wpdb->last_query,
+                'table' => $fw_table,
+            ), 'error' );
+            set_transient( 'expman_firewalls_errors', array( 'מחיקה לצמיתות נכשלה: ' . $wpdb->last_error ), 90 );
+        } elseif ( $ok === 0 ) {
+            $this->logger->log_firewall_event( $id, 'delete_failed', 'מחיקה לצמיתות לא בוצעה', array(
+                'query' => $wpdb->last_query,
+                'table' => $fw_table,
+            ), 'warning' );
+            set_transient( 'expman_firewalls_errors', array( 'מחיקה לצמיתות לא בוצעה (ייתכן שהרשומה לא קיימת).' ), 90 );
+        } else {
+            $this->logger->log_firewall_event( $id, 'delete', 'רישום נמחק לצמיתות' );
+        }
+    }
+
     public function action_archive_firewall() {
         global $wpdb;
         $fw_table = $wpdb->prefix . Expman_Firewalls_Page::TABLE_FIREWALLS;
@@ -526,15 +553,21 @@ class Expman_Firewalls_Actions {
             ob_end_clean();
         }
 
-        nocache_headers();
+        if ( headers_sent() ) {
+            set_transient( 'expman_firewalls_errors', array( 'לא ניתן לשלוח כותרות הורדה (Headers כבר נשלחו). הקובץ יוצג בדפדפן.' ), 90 );
+        } else {
+            nocache_headers();
+        }
 
         $rows = $wpdb->get_results( "
             SELECT fw.*,\n                   c.customer_number AS customer_number,\n                   c.customer_name AS customer_name,\n                   bt.vendor, bt.model\n            FROM {$fw_table} fw\n            LEFT JOIN {$cust_table} c ON c.id = fw.customer_id\n            LEFT JOIN {$types_table} bt ON bt.id = fw.box_type_id\n            WHERE 1=1\n            ORDER BY fw.id ASC\n        " );
 
         $filename = 'firewalls-template-' . date( 'Ymd-His' ) . '.csv';
-        header( 'Content-Type: text/csv; charset=UTF-8' );
-        header( 'Content-Encoding: UTF-8' );
-        header( 'Content-Disposition: attachment; filename=' . $filename );
+        if ( ! headers_sent() ) {
+            header( 'Content-Type: text/csv; charset=UTF-8' );
+            header( 'Content-Encoding: UTF-8' );
+            header( 'Content-Disposition: attachment; filename=' . $filename );
+        }
 
         $out = fopen( 'php://output', 'w' );
         fputs( $out, "\xEF\xBB\xBF" );
@@ -589,7 +622,7 @@ class Expman_Firewalls_Actions {
         return $wpdb->get_results( "SELECT id, vendor, model FROM {$types_table} ORDER BY vendor ASC, model ASC" );
     }
 
-    public function get_firewalls_rows( $filters, $orderby, $order, $status = 'active', $track_only = null ) {
+    public function get_firewalls_rows( $filters, $orderby, $order, $status = 'active', $track_only = null, $limit = 0, $offset = 0 ) {
         global $wpdb;
 
         $fw_table    = $wpdb->prefix . Expman_Firewalls_Page::TABLE_FIREWALLS;
@@ -710,6 +743,12 @@ class Expman_Firewalls_Actions {
             ORDER BY {$orderby_sql} {$order_sql}, fw.id DESC
         ";
 
+        if ( $limit > 0 ) {
+            $sql .= " LIMIT %d OFFSET %d";
+            $params[] = intval( $limit );
+            $params[] = intval( $offset );
+        }
+
         if ( ! empty( $params ) ) {
             $sql = $wpdb->prepare( $sql, $params );
         }
@@ -720,7 +759,7 @@ class Expman_Firewalls_Actions {
     public function get_summary_counts( $option_key ) {
         global $wpdb;
         $settings = get_option( $option_key, array() );
-        $yellow   = intval( $settings['yellow_threshold'] ?? 60 );
+        $yellow   = intval( $settings['yellow_threshold'] ?? 90 );
         $red      = intval( $settings['red_threshold'] ?? 30 );
         $fw_table = $wpdb->prefix . Expman_Firewalls_Page::TABLE_FIREWALLS;
 
@@ -732,7 +771,7 @@ class Expman_Firewalls_Actions {
                     SUM(CASE WHEN expiry_date IS NOT NULL AND DATEDIFF(expiry_date, CURDATE()) <= %d THEN 1 ELSE 0 END) AS red_count,
                     COUNT(*) AS total_count
                  FROM {$fw_table}
-                 WHERE deleted_at IS NULL AND archived_at IS NULL",
+                 WHERE deleted_at IS NULL AND archived_at IS NULL AND track_only = 0",
                 $yellow,
                 $red + 1,
                 $yellow,
@@ -798,6 +837,8 @@ class Expman_Firewalls_Actions {
             return;
         }
 
+        $bulk_ids = array_map( 'intval', (array) ( $_POST['bulk_ids'] ?? array() ) );
+        $bulk_input = (array) ( $_POST['bulk'] ?? array() );
         $rows = $wpdb->get_results( $wpdb->prepare(
             "SELECT id FROM {$stage_table} WHERE import_batch_id=%s AND status IN ('pending','failed') ORDER BY id ASC",
             $batch_id
@@ -808,7 +849,15 @@ class Expman_Firewalls_Actions {
 
         $failures = array();
         foreach ( $rows as $row ) {
-            $result = $this->assign_stage_row( intval( $row->id ), array(), $batch_id );
+            $stage_id = intval( $row->id );
+            if ( ! empty( $bulk_ids ) && ! in_array( $stage_id, $bulk_ids, true ) ) {
+                continue;
+            }
+            $input = array();
+            if ( isset( $bulk_input[ $stage_id ] ) && is_array( $bulk_input[ $stage_id ] ) ) {
+                $input = $bulk_input[ $stage_id ];
+            }
+            $result = $this->assign_stage_row( $stage_id, $input, $batch_id );
             if ( ! empty( $result['error'] ) ) {
                 $failures[] = $result;
             }
@@ -897,7 +946,7 @@ class Expman_Firewalls_Actions {
         $track_only = isset( $input['track_only'] ) ? intval( $input['track_only'] ) : intval( $stage['track_only'] ?? 0 );
         $vendor = sanitize_text_field( $input['vendor'] ?? $stage['vendor'] ?? '' );
         $model = sanitize_text_field( $input['model'] ?? $stage['model'] ?? '' );
-        $expiry_date = sanitize_text_field( $input['expiry_date'] ?? $stage['expiry_date'] ?? '' );
+        $expiry_date = $this->normalize_stage_date( $input['expiry_date'] ?? $stage['expiry_date'] ?? '' );
         $access_url = sanitize_text_field( $input['access_url'] ?? $stage['access_url'] ?? '' );
         $notes = wp_kses_post( $input['notes'] ?? $stage['notes'] ?? '' );
         $temp_notice_enabled = isset( $input['temp_notice_enabled'] ) ? intval( $input['temp_notice_enabled'] ) : intval( $stage['temp_notice_enabled'] ?? 0 );
@@ -1071,6 +1120,33 @@ class Expman_Firewalls_Actions {
             array( '%s', '%s', '%s' ),
             array( '%d' )
         );
+    }
+
+    private function normalize_stage_date( $value ) {
+        $value = trim( (string) $value );
+        if ( $value === '' ) {
+            return '';
+        }
+        if ( preg_match( '/^\d{2}\/\d{2}\/\d{4}$/', $value ) ) {
+            $dt = DateTime::createFromFormat( 'd/m/Y', $value );
+            if ( $dt ) {
+                return $dt->format( 'Y-m-d' );
+            }
+        }
+        if ( preg_match( '/^\d{2}\.\d{2}\.\d{4}$/', $value ) ) {
+            $dt = DateTime::createFromFormat( 'd.m.Y', $value );
+            if ( $dt ) {
+                return $dt->format( 'Y-m-d' );
+            }
+        }
+        if ( preg_match( '/^\d{4}-\d{2}-\d{2}$/', $value ) ) {
+            return $value;
+        }
+        $ts = strtotime( $value );
+        if ( $ts ) {
+            return date( 'Y-m-d', $ts );
+        }
+        return $value;
     }
 }
 }
