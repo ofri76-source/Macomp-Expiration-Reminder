@@ -87,40 +87,6 @@ class Expman_Servers_UI {
 
         echo '<h2 style="margin-top:10px;">שרתים (Dell)</h2>';
         $this->render_summary_cards();
-        echo '<script>(function(){
-          function setActive(status){
-            document.querySelectorAll(".expman-summary-card").forEach(function(card){
-              card.setAttribute("data-active", card.getAttribute("data-expman-status")===status ? "1" : "0");
-            });
-          }
-          function applyFilter(status){
-            window.expmanActiveStatus = status;
-            if(typeof window.expmanApplyServerFilters === "function"){
-              window.expmanApplyServerFilters();
-              return;
-            }
-            document.querySelectorAll(".expman-table-wrap").forEach(function(wrap){
-              wrap.querySelectorAll("tr.expman-row").forEach(function(row){
-                var rowStatus=row.getAttribute("data-expman-status")||"";
-                var rowId=row.getAttribute("data-expman-row-id");
-                var show = (status === "all") || (rowStatus === status);
-                row.style.display = show ? "" : "none";
-                if(rowId){
-                  var inline=wrap.querySelector("tr.expman-inline-form[data-for=\\\"" + rowId + "\\\"]");
-                  if(inline){inline.style.display = "none";}
-                }
-              });
-            });
-          }
-          document.querySelectorAll(".expman-summary-card").forEach(function(card){
-            card.addEventListener("click",function(){
-              var status=card.getAttribute("data-expman-status");
-              if(!status){return;}
-              setActive(status);
-              applyFilter(status);
-            });
-          });
-        })();</script>';
 
         if ( ! empty( $errors ) ) {
             echo '<div class="notice notice-error"><p>' . esc_html( implode( ' | ', (array) $errors ) ) . '</p></div>';
@@ -158,6 +124,112 @@ class Expman_Servers_UI {
         $this->render_assign_tab();
         echo '</div>';
 
+        $ajax  = esc_url( admin_url( 'admin-ajax.php' ) );
+        $nonce = wp_create_nonce( 'expman_customer_search' );
+
+        echo '<script>
+(function(){
+  const ajax = ' . wp_json_encode( $ajax ) . ';
+  const nonce = ' . wp_json_encode( $nonce ) . ';
+
+  document.querySelectorAll(\"[data-expman-tab]\").forEach(btn=>{
+    btn.addEventListener(\"click\", ()=>{
+      const tab = btn.getAttribute(\"data-expman-tab\");
+      document.querySelectorAll(\"[data-expman-tab]\").forEach(b=>b.classList.toggle(\"active\", b===btn));
+      document.querySelectorAll(\"[data-expman-panel]\").forEach(p=>{
+        p.style.display = (p.getAttribute(\"data-expman-panel\")==tab) ? \"\" : \"none\";
+      });
+      const url = new URL(location.href);
+      url.searchParams.set(\"tab\", tab);
+      history.replaceState({}, \"\", url);
+    });
+  });
+
+  const toggle = document.getElementById(\"expman-add-toggle\");
+  const form = document.getElementById(\"expman-add-form\");
+  if(toggle && form){
+    toggle.addEventListener(\"click\", ()=>{
+      form.style.display = (form.style.display===\"none\" || !form.style.display) ? \"\" : \"none\";
+    });
+  }
+
+  const cb = document.getElementById(\"expman-temp-notice-enabled\");
+  const wrap = document.getElementById(\"expman-temp-notice-text-wrap\");
+  if(cb && wrap){
+    cb.addEventListener(\"change\", ()=>{ wrap.style.display = cb.checked ? \"\" : \"none\"; });
+  }
+
+  const all = document.getElementById(\"expman-bulk-check-all\");
+  if(all){
+    all.addEventListener(\"change\", ()=>{
+      document.querySelectorAll(\".expman-bulk-id\").forEach(c=>c.checked = all.checked);
+    });
+  }
+
+  function fetchCustomers(query){
+    const url = ajax + \"?action=expman_customer_search&nonce=\" + encodeURIComponent(nonce) + \"&q=\" + encodeURIComponent(query);
+    return fetch(url).then(r=>r.json()).then(d => (d && d.items) ? d.items : []).catch(()=>[]);
+  }
+
+  document.addEventListener(\"input\", async (e)=>{
+    if(!e.target.matches(\".expman-customer-search\")) return;
+    const input = e.target;
+    const cell = input.closest(\".expman-customer-cell\") || input.closest(\"form\");
+    const results = cell ? cell.querySelector(\".expman-customer-results\") : null;
+    if(!results) return;
+
+    results.innerHTML = \"\";
+    const q = (input.value || \"\").trim();
+    if(q.length < 2) return;
+
+    const items = await fetchCustomers(q);
+    const box = document.createElement(\"div\");
+    box.style.position=\"absolute\";
+    box.style.background=\"#fff\";
+    box.style.border=\"1px solid #ddd\";
+    box.style.borderRadius=\"6px\";
+    box.style.zIndex=\"9999\";
+    box.style.width=\"100%\";
+    box.style.maxHeight=\"240px\";
+    box.style.overflow=\"auto\";
+
+    items.forEach(it=>{
+      const b = document.createElement(\"button\");
+      b.type=\"button\";
+      b.style.display=\"block\";
+      b.style.width=\"100%\";
+      b.style.textAlign=\"right\";
+      b.style.padding=\"6px 8px\";
+      b.style.border=\"0\";
+      b.style.background=\"transparent\";
+      b.textContent = (it.customer_number||\"\") + \" - \" + (it.customer_name||\"\");
+      b.addEventListener(\"click\", ()=>{
+        input.value = b.textContent;
+        const idField = cell.querySelector(\".expman-customer-id\");
+        if(idField) idField.value = it.id || \"\";
+        const f = input.closest(\"form\");
+        if(f){
+          const num = f.querySelector(\"input[name=\\\"customer_number\\\"]\");
+          const name= f.querySelector(\"input[name=\\\"customer_name\\\"]\");
+          if(num) num.value = it.customer_number || \"\";
+          if(name) name.value = it.customer_name || \"\";
+        }
+        results.innerHTML=\"\";
+      });
+      box.appendChild(b);
+    });
+
+    results.appendChild(box);
+  });
+
+  document.addEventListener(\"click\", (e)=>{
+    if(e.target.matches(\".expman-customer-search\")) return;
+    document.querySelectorAll(\".expman-customer-results\").forEach(r=>r.innerHTML=\"\");
+  });
+
+})();
+</script>';
+
         echo '</div>';
     }
 
@@ -190,20 +262,6 @@ class Expman_Servers_UI {
         }
         echo '</div>';
 
-        echo '<script>(function(){
-          function show(k){
-            document.querySelectorAll("[data-expman-panel]").forEach(p=>{p.style.display=(p.getAttribute("data-expman-panel")==k)?"block":"none";});
-            document.querySelectorAll(".expman-tab-btn").forEach(a=>{a.style.opacity=(a.getAttribute("data-expman-tab")==k)?"1":"0.85";});
-            const url=new URL(window.location.href);
-            url.searchParams.set("tab",k);
-            history.replaceState(null,"",url.toString());
-          }
-          document.querySelectorAll(".expman-tab-btn").forEach(a=>a.addEventListener("click",function(e){e.preventDefault();show(a.getAttribute("data-expman-tab"));}));
-          const params=new URLSearchParams(window.location.search);
-          var k=params.get("tab")||"main";
-          if(!document.querySelector("[data-expman-panel=\""+k+"\"]")){k="main";}
-          show(k);
-        })();</script>';
     }
 
     private function common_filters_from_get() {
@@ -224,7 +282,7 @@ class Expman_Servers_UI {
         echo '<button type="button" class="expman-btn" id="expman-add-toggle">הוספת שרת</button>';
         echo '</div>';
 
-        echo '<div id="expman-add-form-wrap" style="display:none;border:1px solid #e6e6e6;border-radius:10px;padding:12px;margin:10px 0;background:#fff;">';
+        echo '<div id="expman-add-form" style="display:none;border:1px solid #e6e6e6;border-radius:10px;padding:12px;margin:10px 0;background:#fff;">';
         $this->render_form( 0 );
         echo '</div>';
 
@@ -233,13 +291,13 @@ class Expman_Servers_UI {
 
         echo '<div class="expman-table-wrap">';
         echo '<form method="post" id="expman-servers-bulk-form">';
-        wp_nonce_field( 'expman_servers' );
+        wp_nonce_field( 'expman_sync_servers_bulk', 'expman_sync_servers_bulk_nonce' );
         echo '<input type="hidden" name="expman_action" value="sync_bulk">';
-        echo '<input type="hidden" name="server_id" value="">';
+        echo '</form>';
         echo '<table class="widefat" style="margin-bottom:10px;">';
         echo '<thead>';
         echo '<tr>';
-        echo '<th style="width:28px;"><input type="checkbox" id="expman-select-all"></th>';
+        echo '<th style="width:28px;"><input type="checkbox" id="expman-bulk-check-all"></th>';
         echo '<th>מספר לקוח</th>';
         echo '<th>שם לקוח</th>';
         echo '<th>Service Tag</th>';
@@ -280,7 +338,7 @@ class Expman_Servers_UI {
             $days_class = 'expman-days-' . $status;
 
             echo '<tr class="expman-row ' . esc_attr( $row_class ) . '" data-expman-status="' . esc_attr( $status ) . '" data-expman-row-id="' . esc_attr( $row->id ) . '" data-customer-number="' . esc_attr( mb_strtolower( (string) $row->customer_number_snapshot ) ) . '" data-customer-name="' . esc_attr( mb_strtolower( (string) $row->customer_name_snapshot ) ) . '" data-service-tag="' . esc_attr( mb_strtolower( (string) $row->service_tag ) ) . '" data-ending-on="' . esc_attr( mb_strtolower( (string) $row->ending_on ) ) . '">';
-            echo '<td><input type="checkbox" name="server_ids[]" value="' . esc_attr( $row->id ) . '"></td>';
+            echo '<td><input type="checkbox" class="expman-bulk-id" form="expman-servers-bulk-form" name="server_ids[]" value="' . esc_attr( $row->id ) . '"></td>';
             echo '<td>' . esc_html( $row->customer_number_snapshot ) . '</td>';
             echo '<td>' . esc_html( $row->customer_name_snapshot ) . '</td>';
             echo '<td>' . esc_html( $row->service_tag ) . '</td>';
@@ -288,8 +346,12 @@ class Expman_Servers_UI {
             echo '<td class="' . esc_attr( $days_class ) . '">' . esc_html( $row->ending_on ) . '</td>';
             echo '<td class="expman-align-left" style="white-space:nowrap;">';
             echo '<button type="button" class="button expman-edit-toggle" data-id="' . esc_attr( $row->id ) . '">ערוך</button> ';
-            echo '<button type="button" class="button expman-row-action" data-action="sync_single" data-id="' . esc_attr( $row->id ) . '">Sync</button> ';
-            echo '<button type="button" class="button expman-row-action" data-action="trash_server" data-id="' . esc_attr( $row->id ) . '" data-confirm="להעביר לסל המחזור?">מחק</button>';
+            echo '<form method="post" style="display:inline;">';
+            wp_nonce_field( 'expman_servers_row_action', 'expman_servers_row_action_nonce' );
+            echo '<input type="hidden" name="server_id" value="' . esc_attr( $row->id ) . '">';
+            echo '<button type="submit" name="expman_action" value="sync_single" class="button">Sync</button> ';
+            echo '<button type="submit" name="expman_action" value="trash_server" class="button" onclick="return confirm(\'להעביר לסל המחזור?\');">מחק</button>';
+            echo '</form>';
             echo '</td>';
             echo '</tr>';
 
@@ -313,86 +375,8 @@ class Expman_Servers_UI {
         }
 
         echo '</tbody></table>';
-        echo '<button type="submit" class="expman-btn" name="expman_action" value="sync_bulk">Sync מסומנים</button>';
-        echo '</form>';
+        echo '<button type="submit" class="expman-btn" form="expman-servers-bulk-form">Sync מסומנים</button>';
         echo '</div>';
-
-        echo '<script>(function(){
-          const addToggle=document.getElementById("expman-add-toggle");
-          function toggleAddForm(){
-            const wrap=document.getElementById("expman-add-form-wrap");
-            if(wrap){wrap.style.display=wrap.style.display==="none"?"block":"none";}
-          }
-          if(addToggle){
-            addToggle.addEventListener("click",function(e){
-              e.preventDefault();
-              toggleAddForm();
-            });
-          }
-          const selectAll=document.getElementById("expman-select-all");
-          if(selectAll){
-            selectAll.addEventListener("change",function(){
-              document.querySelectorAll("input[name=\\\"server_ids[]\\\"]").forEach(cb=>{cb.checked=selectAll.checked;});
-            });
-          }
-          function applyFilters(){
-            const status=window.expmanActiveStatus || "all";
-            const inputs=document.querySelectorAll(".expman-filter-input");
-            const filters={};
-            inputs.forEach(i=>{filters[i.getAttribute("data-filter")]=i.value.trim().toLowerCase();});
-            document.querySelectorAll("tr.expman-row").forEach(function(row){
-              const rowStatus=row.getAttribute("data-expman-status")||"";
-              const matchStatus=(status==="all"||rowStatus===status);
-              const matches=Object.keys(filters).every(function(key){
-                const val=filters[key];
-                if(!val){return true;}
-                const data=(row.getAttribute("data-"+key.replace("_","-"))||"").toLowerCase();
-                return data.indexOf(val)!==-1;
-              });
-              const show=matchStatus && matches;
-              row.style.display=show?"":"none";
-              const detail=document.querySelector("tr.expman-details[data-for=\\\""+row.getAttribute("data-expman-row-id")+"\\\"]");
-              if(detail){detail.style.display="none";}
-              const inline=document.querySelector("tr.expman-inline-form[data-for=\\\""+row.getAttribute("data-expman-row-id")+"\\\"]");
-              if(inline){inline.style.display="none";}
-            });
-          }
-          window.expmanApplyServerFilters=applyFilters;
-          document.querySelectorAll(".expman-filter-input").forEach(input=>{
-            input.addEventListener("input",function(){applyFilters();});
-          });
-          const bulkForm=document.getElementById("expman-servers-bulk-form");
-          const hiddenAction=bulkForm ? bulkForm.querySelector("input[name=\\\"expman_action\\\"]") : null;
-          const hiddenId=bulkForm ? bulkForm.querySelector("input[name=\\\"server_id\\\"]") : null;
-          document.querySelectorAll(".expman-row-action").forEach(btn=>{
-            btn.addEventListener("click",function(e){
-              e.preventDefault();
-              if(!bulkForm || !hiddenAction || !hiddenId){return;}
-              const action=btn.getAttribute("data-action");
-              const id=btn.getAttribute("data-id");
-              const confirmMsg=btn.getAttribute("data-confirm");
-              if(confirmMsg && !window.confirm(confirmMsg)){return;}
-              hiddenAction.value=action;
-              hiddenId.value=id;
-              bulkForm.submit();
-            });
-          });
-          document.querySelectorAll(".expman-edit-toggle").forEach(btn=>{
-            btn.addEventListener("click",function(){
-              const id=btn.getAttribute("data-id");
-              const row=document.querySelector("tr.expman-inline-form[data-for=\\\"" + id + "\\\"]");
-              if(row){row.style.display=row.style.display==="none"?"table-row":"none";}
-            });
-          });
-          document.querySelectorAll("tr.expman-row").forEach(function(row){
-            row.addEventListener("click",function(e){
-              if(e.target.closest("button, a, input, textarea, select, form")){return;}
-              const id=row.getAttribute("data-expman-row-id");
-              const detail=document.querySelector("tr.expman-details[data-for=\\\""+id+"\\\"]");
-              if(detail){detail.style.display=detail.style.display==="none"?"table-row":"none";}
-            });
-          });
-        })();</script>';
     }
 
     private function render_form( $id = 0, $row_obj = null ) {
@@ -427,7 +411,7 @@ class Expman_Servers_UI {
         </style>';
 
         echo '<form method="post" class="expman-servers-form" style="margin:0;">';
-        wp_nonce_field( 'expman_save_server' );
+        wp_nonce_field( 'expman_save_server', 'expman_save_server_nonce' );
         echo '<input type="hidden" name="action" value="expman_save_server">';
         echo '<input type="hidden" name="server_id" value="' . esc_attr( $id ) . '">';
         echo '<input type="hidden" name="customer_id" class="expman-customer-id" value="' . esc_attr( $row['customer_id'] ) . '">';
@@ -444,8 +428,10 @@ class Expman_Servers_UI {
         echo '<div><label>Service Tag</label><input type="text" name="service_tag" value="' . esc_attr( $row['service_tag'] ) . '" required></div>';
 
         echo '<div><label>הערות</label><textarea name="notes" rows="2">' . esc_textarea( $row['notes'] ) . '</textarea></div>';
-        echo '<div><label><input type="checkbox" name="temp_notice_enabled" class="temp_notice_enabled" value="1" ' . checked( $row['temp_notice_enabled'], 1, false ) . '> הודעה זמנית</label></div>';
-        echo '<div class="temp_notice_wrap" style="' . ( $row['temp_notice_enabled'] ? '' : 'display:none;' ) . '"><label>טקסט הודעה זמנית</label><textarea name="temp_notice_text" rows="2">' . esc_textarea( $row['temp_notice_text'] ) . '</textarea></div>';
+        $temp_id = $id === 0 ? ' id="expman-temp-notice-enabled"' : '';
+        $temp_wrap_id = $id === 0 ? ' id="expman-temp-notice-text-wrap"' : '';
+        echo '<div><label><input type="checkbox" name="temp_notice_enabled" class="temp_notice_enabled" value="1"' . $temp_id . ' ' . checked( $row['temp_notice_enabled'], 1, false ) . '> הודעה זמנית</label></div>';
+        echo '<div class="temp_notice_wrap" style="' . ( $row['temp_notice_enabled'] ? '' : 'display:none;' ) . '"' . $temp_wrap_id . '><label>טקסט הודעה זמנית</label><textarea name="temp_notice_text" rows="2">' . esc_textarea( $row['temp_notice_text'] ) . '</textarea></div>';
 
         echo '</div>';
 
@@ -456,77 +442,6 @@ class Expman_Servers_UI {
 
         echo '</form>';
 
-        $ajax = esc_url( admin_url( 'admin-ajax.php' ) );
-        $nonce = wp_create_nonce( 'expman_customer_search' );
-
-        echo '<script>(function(){
-          const ajax="' . esc_js( $ajax ) . '";
-          const nonce="' . esc_js( $nonce ) . '";
-          function fetchCustomers(query, cb){
-            const url=ajax+"?action=expman_customer_search&nonce="+encodeURIComponent(nonce)+"&q="+encodeURIComponent(query);
-            fetch(url).then(r=>r.json()).then(d=>cb(d.items||[])).catch(()=>cb([]));
-          }
-          document.querySelectorAll(".expman-customer-search").forEach(function(input){
-            input.addEventListener("input",function(){
-              const cell=input.closest("form");
-              const results=cell.querySelector(".expman-customer-results");
-              const q=input.value.trim();
-              results.innerHTML="";
-              if(q.length<2){return;}
-              fetchCustomers(q,function(items){
-                results.innerHTML="";
-                const wrap=document.createElement("div");
-                wrap.style.position="absolute";
-                wrap.style.background="#fff";
-                wrap.style.border="1px solid #ddd";
-                wrap.style.borderRadius="6px";
-                wrap.style.zIndex="999";
-                wrap.style.minWidth="220px";
-                items.forEach(function(it){
-                  const btn=document.createElement("button");
-                  btn.type="button";
-                  btn.textContent=it.customer_number+" - "+it.customer_name;
-                  btn.style.display="block";
-                  btn.style.width="100%";
-                  btn.style.textAlign="right";
-                  btn.style.padding="6px 8px";
-                  btn.style.border="0";
-                  btn.style.background="transparent";
-                  btn.addEventListener("click",function(){
-                    input.value=it.customer_number+" - "+it.customer_name;
-                    cell.querySelector(".expman-customer-id").value=it.id;
-                    cell.querySelector(".expman-customer-number").value=it.customer_number;
-                    cell.querySelector(".expman-customer-name").value=it.customer_name;
-                    results.innerHTML="";
-                  });
-                  wrap.appendChild(btn);
-                });
-                results.appendChild(wrap);
-              });
-            });
-          });
-          document.addEventListener("click",function(e){
-            if(e.target.classList.contains("expman-customer-search")) return;
-            document.querySelectorAll(".expman-customer-results").forEach(r=>{r.innerHTML="";});
-          });
-          document.querySelectorAll(".temp_notice_enabled").forEach(function(chk){
-            const form=chk.closest("form");
-            const wrap=form.querySelector(".temp_notice_wrap");
-            chk.addEventListener("change",function(){
-              if(wrap){wrap.style.display=chk.checked?"block":"none";}
-            });
-          });
-          document.querySelectorAll("[data-expman-cancel]").forEach(function(btn){
-            btn.addEventListener("click",function(){
-              const row=btn.closest("tr");
-              if(row && row.classList.contains("expman-inline-form")){
-                row.style.display="none";
-              }
-              const wrap=document.getElementById("expman-add-form-wrap");
-              if(wrap){wrap.style.display="none";}
-            });
-          });
-        })();</script>';
     }
 
     private function render_settings_tab() {
@@ -539,7 +454,7 @@ class Expman_Servers_UI {
 
         echo '<h3>הגדרות Dell TechDirect</h3>';
         echo '<form method="post" style="max-width:520px;">';
-        wp_nonce_field( 'expman_servers' );
+        wp_nonce_field( 'expman_save_dell_settings', 'expman_save_dell_settings_nonce' );
         echo '<input type="hidden" name="expman_action" value="save_dell_settings">';
         echo '<table class="form-table"><tbody>';
         echo '<tr><th>Client ID</th><td><input type="text" name="dell_client_id" value="' . esc_attr( $client_id ) . '" class="regular-text"></td></tr>';
@@ -555,13 +470,13 @@ class Expman_Servers_UI {
         echo '<h3>ייבוא / ייצוא לאקסל (CSV)</h3>';
         echo '<p style="color:#666;">הקובץ מיוצא בקידוד UTF-8 עם BOM כדי לתמוך בעברית.</p>';
         echo '<form method="post" style="margin-bottom:12px;">';
-        wp_nonce_field( 'expman_servers' );
+        wp_nonce_field( 'expman_export_servers_csv', 'expman_export_servers_csv_nonce' );
         echo '<input type="hidden" name="expman_action" value="export_servers_csv">';
         echo '<button type="submit" class="button">ייצוא לאקסל</button>';
         echo '</form>';
 
         echo '<form method="post" enctype="multipart/form-data">';
-        wp_nonce_field( 'expman_servers' );
+        wp_nonce_field( 'expman_import_servers_excel', 'expman_import_servers_excel_nonce' );
         echo '<input type="hidden" name="expman_action" value="import_excel_settings">';
         echo '<input type="file" name="servers_excel_file" accept=".csv">';
         echo '<button type="submit" class="button">ייבוא מאקסל</button>';
@@ -599,7 +514,7 @@ class Expman_Servers_UI {
 
         echo '<h3>סל מחזור</h3>';
         echo '<form method="post" style="margin-bottom:10px;">';
-        wp_nonce_field( 'expman_servers' );
+        wp_nonce_field( 'expman_empty_servers_trash', 'expman_empty_servers_trash_nonce' );
         echo '<input type="hidden" name="expman_action" value="empty_trash">';
         echo '<button type="submit" class="button" onclick="return confirm(\'לרוקן את סל המחזור?\');">רוקן סל מחזור</button>';
         echo '</form>';
@@ -617,13 +532,13 @@ class Expman_Servers_UI {
             echo '<td>' . esc_html( $row->deleted_at ) . '</td>';
             echo '<td>';
             echo '<form method="post" style="display:inline;">';
-            wp_nonce_field( 'expman_servers' );
+            wp_nonce_field( 'expman_restore_server', 'expman_restore_server_nonce' );
             echo '<input type="hidden" name="expman_action" value="restore_server">';
             echo '<input type="hidden" name="server_id" value="' . esc_attr( $row->id ) . '">';
             echo '<button type="submit" class="button">שחזור</button>';
             echo '</form> ';
             echo '<form method="post" style="display:inline;" onsubmit="return confirm(\'למחוק לצמיתות?\');">';
-            wp_nonce_field( 'expman_servers' );
+            wp_nonce_field( 'expman_delete_server_permanently', 'expman_delete_server_permanently_nonce' );
             echo '<input type="hidden" name="expman_action" value="delete_server_permanently">';
             echo '<input type="hidden" name="server_id" value="' . esc_attr( $row->id ) . '">';
             echo '<button type="submit" class="button">מחיקה לצמיתות</button>';
@@ -640,7 +555,7 @@ class Expman_Servers_UI {
 
         echo '<h3>שיוך לאחר ייבוא</h3>';
         echo '<form method="post" enctype="multipart/form-data" style="margin-bottom:16px;">';
-        wp_nonce_field( 'expman_servers' );
+        wp_nonce_field( 'expman_import_servers_csv', 'expman_import_servers_csv_nonce' );
         echo '<input type="hidden" name="expman_action" value="import_csv">';
         echo '<input type="file" name="servers_file" accept=".csv">';
         echo '<button type="submit" class="button">ייבוא CSV</button>';
@@ -661,7 +576,7 @@ class Expman_Servers_UI {
             echo '<td>' . esc_html( $row->notes ) . '</td>';
             echo '<td>';
             echo '<form method="post" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">';
-            wp_nonce_field( 'expman_servers' );
+            wp_nonce_field( 'expman_assign_servers_stage', 'expman_assign_servers_stage_nonce' );
             echo '<input type="hidden" name="expman_action" value="assign_import_stage">';
             echo '<input type="hidden" name="stage_id" value="' . esc_attr( $row->id ) . '">';
             echo '<input type="hidden" name="service_tag" value="' . esc_attr( $row->service_tag ) . '">';
@@ -675,7 +590,7 @@ class Expman_Servers_UI {
             echo '</td>';
             echo '<td>';
             echo '<form method="post" onsubmit="return confirm(\'למחוק את השורה?\');">';
-            wp_nonce_field( 'expman_servers' );
+            wp_nonce_field( 'expman_delete_servers_stage', 'expman_delete_servers_stage_nonce' );
             echo '<input type="hidden" name="expman_action" value="delete_import_stage">';
             echo '<input type="hidden" name="stage_id" value="' . esc_attr( $row->id ) . '">';
             echo '<button type="submit" class="button">מחיקה</button>';

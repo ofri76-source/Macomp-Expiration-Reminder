@@ -130,14 +130,25 @@ class Expman_Servers_Page {
         }
         $redirect_tab = sanitize_key( $_POST['tab'] ?? '' );
 
-        if ( $action === 'expman_save_server' ) {
-            if ( empty( $_POST['_wpnonce'] ) || ! wp_verify_nonce( $_POST['_wpnonce'], 'expman_save_server' ) ) {
-                return;
-            }
-        } else {
-            if ( empty( $_POST['_wpnonce'] ) || ! wp_verify_nonce( $_POST['_wpnonce'], 'expman_servers' ) ) {
-                return;
-            }
+        $nonce_map = array(
+            'expman_save_server'       => array( 'expman_save_server', 'expman_save_server_nonce' ),
+            'sync_bulk'                => array( 'expman_sync_servers_bulk', 'expman_sync_servers_bulk_nonce' ),
+            'sync_single'              => array( 'expman_servers_row_action', 'expman_servers_row_action_nonce' ),
+            'trash_server'             => array( 'expman_servers_row_action', 'expman_servers_row_action_nonce' ),
+            'restore_server'           => array( 'expman_restore_server', 'expman_restore_server_nonce' ),
+            'delete_server_permanently'=> array( 'expman_delete_server_permanently', 'expman_delete_server_permanently_nonce' ),
+            'empty_trash'              => array( 'expman_empty_servers_trash', 'expman_empty_servers_trash_nonce' ),
+            'import_csv'               => array( 'expman_import_servers_csv', 'expman_import_servers_csv_nonce' ),
+            'import_excel_settings'    => array( 'expman_import_servers_excel', 'expman_import_servers_excel_nonce' ),
+            'assign_import_stage'      => array( 'expman_assign_servers_stage', 'expman_assign_servers_stage_nonce' ),
+            'delete_import_stage'      => array( 'expman_delete_servers_stage', 'expman_delete_servers_stage_nonce' ),
+            'save_dell_settings'       => array( 'expman_save_dell_settings', 'expman_save_dell_settings_nonce' ),
+            'export_servers_csv'       => array( 'expman_export_servers_csv', 'expman_export_servers_csv_nonce' ),
+        );
+
+        if ( isset( $nonce_map[ $action ] ) ) {
+            list( $nonce_action, $nonce_field ) = $nonce_map[ $action ];
+            check_admin_referer( $nonce_action, $nonce_field );
         }
 
         switch ( $action ) {
