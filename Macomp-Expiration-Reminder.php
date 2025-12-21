@@ -17,6 +17,8 @@ require_once plugin_dir_path(__FILE__) . 'includes/admin/class-expman-generic-it
 require_once plugin_dir_path(__FILE__) . 'includes/admin/class-expman-trash-page.php';
 require_once plugin_dir_path(__FILE__) . 'includes/admin/class-expman-logs-page.php';
 require_once plugin_dir_path(__FILE__) . 'includes/admin/class-expman-settings-page.php';
+require_once plugin_dir_path(__FILE__) . 'includes/admin/domains/class-drm-manager.php';
+require_once plugin_dir_path(__FILE__) . 'includes/admin/class-expman-domains-page.php';
 
 class Expiry_Manager_Plugin {
 
@@ -90,6 +92,9 @@ class Expiry_Manager_Plugin {
         if ( class_exists('Expman_Servers_Page') ) {
             Expman_Servers_Page::install_tables();
         }
+        if ( class_exists( 'DRM_Manager' ) ) {
+            ( new DRM_Manager() )->on_activate();
+        }
 
         if ( ! get_option( self::OPTION_KEY ) ) {
             add_option( self::OPTION_KEY, array(
@@ -125,7 +130,7 @@ class Expiry_Manager_Plugin {
             function() { ( new Expman_Generic_Items_Page( self::OPTION_KEY, 'certs', 'תעודות אבטחה' ) )->render_page(); });
 
         add_submenu_page('expman_dashboard', 'דומיינים', 'דומיינים', 'manage_options', 'expman_domains',
-            function() { ( new Expman_Generic_Items_Page( self::OPTION_KEY, 'domains', 'דומיינים' ) )->render_page(); });
+            function() { ( new Expman_Domains_Page() )->render_page(); });
 
         add_submenu_page('expman_dashboard', 'שרתים', 'שרתים', 'manage_options', 'expman_servers',
             function() { ( new Expman_Servers_Page( self::OPTION_KEY, self::VERSION ) )->render_page(); });
