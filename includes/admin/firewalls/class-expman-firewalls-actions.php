@@ -907,7 +907,7 @@ class Expman_Firewalls_Actions {
         $track_only = isset( $input['track_only'] ) ? intval( $input['track_only'] ) : intval( $stage['track_only'] ?? 0 );
         $vendor = sanitize_text_field( $input['vendor'] ?? $stage['vendor'] ?? '' );
         $model = sanitize_text_field( $input['model'] ?? $stage['model'] ?? '' );
-        $expiry_date = sanitize_text_field( $input['expiry_date'] ?? $stage['expiry_date'] ?? '' );
+        $expiry_date = $this->normalize_stage_date( $input['expiry_date'] ?? $stage['expiry_date'] ?? '' );
         $access_url = sanitize_text_field( $input['access_url'] ?? $stage['access_url'] ?? '' );
         $notes = wp_kses_post( $input['notes'] ?? $stage['notes'] ?? '' );
         $temp_notice_enabled = isset( $input['temp_notice_enabled'] ) ? intval( $input['temp_notice_enabled'] ) : intval( $stage['temp_notice_enabled'] ?? 0 );
@@ -1081,6 +1081,33 @@ class Expman_Firewalls_Actions {
             array( '%s', '%s', '%s' ),
             array( '%d' )
         );
+    }
+
+    private function normalize_stage_date( $value ) {
+        $value = trim( (string) $value );
+        if ( $value === '' ) {
+            return '';
+        }
+        if ( preg_match( '/^\d{2}\/\d{2}\/\d{4}$/', $value ) ) {
+            $dt = DateTime::createFromFormat( 'd/m/Y', $value );
+            if ( $dt ) {
+                return $dt->format( 'Y-m-d' );
+            }
+        }
+        if ( preg_match( '/^\d{2}\.\d{2}\.\d{4}$/', $value ) ) {
+            $dt = DateTime::createFromFormat( 'd.m.Y', $value );
+            if ( $dt ) {
+                return $dt->format( 'Y-m-d' );
+            }
+        }
+        if ( preg_match( '/^\d{4}-\d{2}-\d{2}$/', $value ) ) {
+            return $value;
+        }
+        $ts = strtotime( $value );
+        if ( $ts ) {
+            return date( 'Y-m-d', $ts );
+        }
+        return $value;
     }
 }
 }
