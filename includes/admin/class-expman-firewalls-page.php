@@ -212,6 +212,13 @@ class Expman_Firewalls_Page {
         if ( $redirect_tab === 'assign' && ! empty( $_POST['batch'] ) ) {
             $redirect_url = add_query_arg( 'batch', sanitize_text_field( $_POST['batch'] ), $redirect_url );
         }
+
+        if ( headers_sent() ) {
+            $this->add_notice( 'הפעולה בוצעה, אך לא ניתן לבצע הפניה אוטומטית (headers כבר נשלחו). לחץ לרענון העמוד.', 'warning' );
+            echo '<div class="notice notice-warning"><p><a href="' . esc_url( $redirect_url ) . '">לחץ כאן לחזרה לעמוד</a></p></div>';
+            return;
+        }
+
         wp_safe_redirect( $redirect_url );
         exit;
     }
