@@ -12,6 +12,7 @@ if ( ! defined( 'ABSPATH' ) ) { exit; }
 require_once plugin_dir_path(__FILE__) . 'includes/admin/class-expman-nav.php';
 require_once plugin_dir_path(__FILE__) . 'includes/admin/class-expman-dashboard-page.php';
 require_once plugin_dir_path(__FILE__) . 'includes/admin/class-expman-firewalls-page.php';
+require_once plugin_dir_path(__FILE__) . 'includes/admin/class-expman-servers-page.php';
 require_once plugin_dir_path(__FILE__) . 'includes/admin/class-expman-generic-items-page.php';
 require_once plugin_dir_path(__FILE__) . 'includes/admin/class-expman-trash-page.php';
 require_once plugin_dir_path(__FILE__) . 'includes/admin/class-expman-logs-page.php';
@@ -39,6 +40,7 @@ class Expiry_Manager_Plugin {
         add_action( 'init', array( $this, 'register_shortcodes' ) );
         add_action( 'admin_init', array( $this, 'maybe_install_tables' ) );
         add_action( 'wp_ajax_expman_customer_search', array( $this, 'ajax_customer_search' ) );
+        add_action( 'admin_post_expman_server_create', array( $this, 'handle_expman_server_create' ) );
 }
 
     public function on_activate() {
@@ -85,6 +87,9 @@ class Expiry_Manager_Plugin {
         if ( class_exists('Expman_Firewalls_Page') ) {
             Expman_Firewalls_Page::install_tables();
         }
+        if ( class_exists('Expman_Servers_Page') ) {
+            Expman_Servers_Page::install_tables();
+        }
 
         if ( ! get_option( self::OPTION_KEY ) ) {
             add_option( self::OPTION_KEY, array(
@@ -123,7 +128,7 @@ class Expiry_Manager_Plugin {
             function() { ( new Expman_Generic_Items_Page( self::OPTION_KEY, 'domains', 'דומיינים' ) )->render_page(); });
 
         add_submenu_page('expman_dashboard', 'שרתים', 'שרתים', 'manage_options', 'expman_servers',
-            function() { ( new Expman_Generic_Items_Page( self::OPTION_KEY, 'servers', 'שרתים' ) )->render_page(); });
+            function() { ( new Expman_Servers_Page( self::OPTION_KEY, self::VERSION ) )->render_page(); });
 
         add_submenu_page('expman_dashboard', 'Trash', 'Trash', 'manage_options', 'expman_trash',
             function() { ( new Expman_Trash_Page( self::OPTION_KEY ) )->render_page(); });
@@ -148,6 +153,14 @@ class Expiry_Manager_Plugin {
         $exists   = $wpdb->get_var( $wpdb->prepare( "SHOW TABLES LIKE %s", $fw_table ) );
         if ( $exists !== $fw_table ) {
             Expman_Firewalls_Page::install_tables();
+        }
+
+        if ( class_exists( 'Expman_Servers_Page' ) ) {
+            $servers_table = $wpdb->prefix . Expman_Servers_Page::TABLE_SERVERS;
+            $servers_exists = $wpdb->get_var( $wpdb->prepare( "SHOW TABLES LIKE %s", $servers_table ) );
+            if ( $servers_exists !== $servers_table ) {
+                Expman_Servers_Page::install_tables();
+            }
         }
     }
 
@@ -275,7 +288,13 @@ class Expiry_Manager_Plugin {
         $guard = $this->shortcode_guard();
         if ( $guard !== '' ) { return $guard; }
 
-        return $this->shortcode_generic( array( 'type' => 'servers', 'title' => 'שרתים' ) );
+        $this->buffer_start();
+        if ( class_exists( 'Expman_Servers_Page' ) ) {
+            Expman_Servers_Page::render_public_page( self::OPTION_KEY, self::VERSION );
+        } else {
+            echo '<p>Servers module not loaded.</p>';
+        }
+        return $this->buffer_end();
     }
 
     public function shortcode_trash() {
@@ -306,6 +325,61 @@ class Expiry_Manager_Plugin {
             echo '<p>Settings module not loaded.</p>';
         }
         return $this->buffer_end();
+    }
+
+    public function handle_expman_server_create() {
+        if ( ! current_user_can( 'manage_options' ) ) {
+            wp_die( 'No permission' );
+        }
+
+        if ( empty( $_POST['expman_server_create_nonce'] ) || ! wp_verify_nonce( $_POST['expman_server_create_nonce'], 'expman_server_create' ) ) {
+            wp_die( 'Bad nonce' );
+        }
+
+        $service_tag = strtoupper( sanitize_text_field( $_POST['service_tag'] ?? '' ) );
+        $customer_number = sanitize_text_field( $_POST['customer_number'] ?? '' );
+        $customer_name = sanitize_text_field( $_POST['customer_name'] ?? '' );
+        $sync_now = ! empty( $_POST['sync_now'] );
+
+        if ( $service_tag === '' ) {
+            wp_safe_redirect( add_query_arg( array( 'page' => 'expman_servers', 'msg' => 'missing_tag' ), admin_url( 'admin.php' ) ) );
+            exit;
+        }
+
+        require_once plugin_dir_path(__FILE__) . 'includes/admin/class-expman-servers-page.php';
+        $page = new Expman_Servers_Page( self::OPTION_KEY, self::VERSION );
+
+        global $wpdb;
+        $table = $wpdb->prefix . Expman_Servers_Page::TABLE_SERVERS;
+
+        $wpdb->insert(
+            $table,
+            array(
+                'option_key'               => self::OPTION_KEY,
+                'customer_number_snapshot' => $customer_number !== '' ? $customer_number : null,
+                'customer_name_snapshot'   => $customer_name !== '' ? $customer_name : null,
+                'service_tag'              => $service_tag,
+                'created_at'               => current_time( 'mysql' ),
+                'updated_at'               => current_time( 'mysql' ),
+            ),
+            array( '%s', '%s', '%s', '%s', '%s', '%s' )
+        );
+
+        $new_id = (int) $wpdb->insert_id;
+
+        if ( ! $new_id ) {
+            wp_safe_redirect( add_query_arg( array( 'page' => 'expman_servers', 'msg' => 'db_error' ), admin_url( 'admin.php' ) ) );
+            exit;
+        }
+
+        if ( $sync_now ) {
+            $page->get_actions()->set_option_key( self::OPTION_KEY );
+            $page->get_actions()->set_dell( $page->get_dell() );
+            $page->get_actions()->sync_server_by_id( $new_id );
+        }
+
+        wp_safe_redirect( add_query_arg( array( 'page' => 'expman_servers', 'msg' => 'created' ), admin_url( 'admin.php' ) ) );
+        exit;
     }
 
     public function shortcode_generic( $atts ) {
