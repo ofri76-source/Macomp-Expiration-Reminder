@@ -303,9 +303,14 @@ class Expman_Servers_Actions {
     public function get_logs( $limit = 200 ) {
         global $wpdb;
         $logs_table = $wpdb->prefix . Expman_Servers_Page::TABLE_SERVER_LOGS;
+        $servers_table = $wpdb->prefix . Expman_Servers_Page::TABLE_SERVERS;
         return $wpdb->get_results(
             $wpdb->prepare(
-                "SELECT * FROM {$logs_table} ORDER BY created_at DESC LIMIT %d",
+                "SELECT logs.*, srv.customer_name_snapshot, srv.service_tag
+                 FROM {$logs_table} logs
+                 LEFT JOIN {$servers_table} srv ON srv.id = logs.server_id
+                 ORDER BY logs.created_at DESC
+                 LIMIT %d",
                 intval( $limit )
             )
         );
@@ -422,6 +427,10 @@ class Expman_Servers_Actions {
         return ( new Expman_Servers_Importer( $this->logger, $this->option_key ) )->run();
     }
 
+    public function action_import_excel_settings() {
+        return ( new Expman_Servers_Importer( $this->logger, $this->option_key ) )->run( 'servers_excel_file' );
+    }
+
     public function get_stage_rows() {
         global $wpdb;
         $stage_table = $wpdb->prefix . Expman_Servers_Page::TABLE_SERVER_IMPORT_STAGE;
@@ -496,6 +505,64 @@ class Expman_Servers_Actions {
         $wpdb->delete( $stage_table, array( 'id' => $stage_id ) );
         $this->logger->log_server_event( null, 'import_delete', 'שורת שיוך נמחקה', array( 'stage_id' => $stage_id ), 'info' );
         $this->add_notice( 'שורת שיוך נמחקה.' );
+    }
+
+    public function action_export_csv() {
+        global $wpdb;
+        $servers_table = $wpdb->prefix . Expman_Servers_Page::TABLE_SERVERS;
+
+        $rows = $wpdb->get_results(
+            $wpdb->prepare(
+                "SELECT * FROM {$servers_table} WHERE option_key=%s AND deleted_at IS NULL ORDER BY id DESC",
+                $this->option_key
+            ),
+            ARRAY_A
+        );
+
+        $filename = 'expman_servers_' . gmdate( 'Ymd_His' ) . '.csv';
+        header( 'Content-Type: text/csv; charset=UTF-8' );
+        header( 'Content-Disposition: attachment; filename=' . $filename );
+        header( 'Pragma: no-cache' );
+        header( 'Expires: 0' );
+
+        $out = fopen( 'php://output', 'w' );
+        if ( $out ) {
+            fwrite( $out, "\xEF\xBB\xBF" );
+            fputcsv( $out, array(
+                'מספר לקוח',
+                'שם לקוח',
+                'Service Tag',
+                'Express Service Code',
+                'Ship Date',
+                'Ending on',
+                'סוג שירות',
+                'דגם שרת',
+                'הודעה זמנית פעילה',
+                'טקסט הודעה זמנית',
+                'הערות',
+            ) );
+
+            foreach ( (array) $rows as $row ) {
+                fputcsv( $out, array(
+                    $row['customer_number_snapshot'] ?? '',
+                    $row['customer_name_snapshot'] ?? '',
+                    $row['service_tag'] ?? '',
+                    $row['express_service_code'] ?? '',
+                    $row['ship_date'] ?? '',
+                    $row['ending_on'] ?? '',
+                    $row['service_level'] ?? '',
+                    $row['server_model'] ?? '',
+                    ! empty( $row['temp_notice_enabled'] ) ? 'כן' : 'לא',
+                    $row['temp_notice_text'] ?? '',
+                    $row['notes'] ?? '',
+                ) );
+            }
+
+            fclose( $out );
+        }
+
+        $this->logger->log_server_event( null, 'export', 'ייצוא CSV בוצע', array( 'count' => count( $rows ) ), 'info' );
+        exit;
     }
 }
 }

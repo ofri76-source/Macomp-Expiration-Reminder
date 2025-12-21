@@ -160,6 +160,10 @@ class Expman_Servers_Page {
                 $this->importer->run();
                 $redirect_tab = 'assign';
                 break;
+            case 'import_excel_settings':
+                $this->actions->action_import_excel_settings();
+                $redirect_tab = 'settings';
+                break;
             case 'assign_import_stage':
                 $this->actions->action_assign_import_stage();
                 $redirect_tab = 'assign';
@@ -174,6 +178,9 @@ class Expman_Servers_Page {
                 }
                 $redirect_tab = 'settings';
                 break;
+            case 'export_servers_csv':
+                $this->actions->action_export_csv();
+                return;
         }
 
         $redirect_url = remove_query_arg( array( 'expman_msg' ) );

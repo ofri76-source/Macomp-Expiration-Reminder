@@ -12,13 +12,13 @@ class Expman_Servers_Importer {
         $this->option_key = $option_key;
     }
 
-    public function run() {
-        if ( empty( $_FILES['servers_file']['tmp_name'] ) ) {
+    public function run( $file_field = 'servers_file' ) {
+        if ( empty( $_FILES[ $file_field ]['tmp_name'] ) ) {
             set_transient( 'expman_servers_errors', array( 'לא נבחר קובץ ליבוא.' ), 90 );
             return;
         }
 
-        $tmp = $_FILES['servers_file']['tmp_name'];
+        $tmp = $_FILES[ $file_field ]['tmp_name'];
         $h = fopen( $tmp, 'r' );
         if ( ! $h ) {
             set_transient( 'expman_servers_errors', array( 'לא ניתן לקרוא את הקובץ.' ), 90 );
