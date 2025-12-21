@@ -6,7 +6,7 @@ class Expman_Domains_Page {
     private DRM_Manager $drm;
 
     public function __construct() {
-        $this->drm = new DRM_Manager();
+        $this->drm = DRM_Manager::instance();
     }
 
     public function render_page() {
