@@ -145,14 +145,6 @@ class Expman_Servers_UI {
     });
   });
 
-  const toggle = document.getElementById(\"expman-add-toggle\");
-  const form = document.getElementById(\"expman-add-form\");
-  if(toggle && form){
-    toggle.addEventListener(\"click\", ()=>{
-      form.style.display = (form.style.display===\"none\" || !form.style.display) ? \"\" : \"none\";
-    });
-  }
-
   const cb = document.getElementById(\"expman-temp-notice-enabled\");
   const wrap = document.getElementById(\"expman-temp-notice-text-wrap\");
   if(cb && wrap){
@@ -278,12 +270,21 @@ class Expman_Servers_UI {
         $orderby = sanitize_key( $_GET['orderby'] ?? 'ending_on' );
         $order   = sanitize_key( $_GET['order'] ?? 'ASC' );
 
-        echo '<div style="display:flex;gap:10px;justify-content:flex-end;flex-wrap:wrap;margin:10px 0;">';
-        echo '<button type="button" class="expman-btn" id="expman-add-toggle">הוספת שרת</button>';
+        echo '<div style="background:#fff;border:1px solid #d9e3f2;border-radius:12px;padding:14px;margin:12px 0;">';
+        echo '<h3 style="margin:0 0 10px;">הוספת שרת</h3>';
+        echo '<form method="post" action="' . esc_url( admin_url( 'admin-post.php' ) ) . '">';
+        echo '<input type="hidden" name="action" value="expman_server_create">';
+        wp_nonce_field( 'expman_server_create', 'expman_server_create_nonce' );
+        echo '<div style="display:grid;grid-template-columns:repeat(3,minmax(180px,1fr));gap:10px;align-items:end;">';
+        echo '<div><label>Service Tag</label><br><input type="text" name="service_tag" required class="regular-text"></div>';
+        echo '<div><label>מספר לקוח</label><br><input type="text" name="customer_number" class="regular-text"></div>';
+        echo '<div><label>שם לקוח</label><br><input type="text" name="customer_name" class="regular-text"></div>';
         echo '</div>';
-
-        echo '<div id="expman-add-form" style="display:none;border:1px solid #e6e6e6;border-radius:10px;padding:12px;margin:10px 0;background:#fff;">';
-        $this->render_form( 0 );
+        echo '<div style="margin-top:10px;">';
+        echo '<label><input type="checkbox" name="sync_now" value="1"> סנכרון מול Dell אחרי שמירה</label>';
+        echo '</div>';
+        echo '<p style="margin:10px 0 0;"><button type="submit" class="button button-primary">שמור</button></p>';
+        echo '</form>';
         echo '</div>';
 
         $rows = $actions->get_servers_rows( $filters, $orderby, $order, false );

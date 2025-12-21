@@ -40,6 +40,7 @@ class Expiry_Manager_Plugin {
         add_action( 'init', array( $this, 'register_shortcodes' ) );
         add_action( 'admin_init', array( $this, 'maybe_install_tables' ) );
         add_action( 'wp_ajax_expman_customer_search', array( $this, 'ajax_customer_search' ) );
+        add_action( 'admin_post_expman_server_create', array( $this, 'handle_expman_server_create' ) );
 }
 
     public function on_activate() {
@@ -323,6 +324,61 @@ class Expiry_Manager_Plugin {
             echo '<p>Settings module not loaded.</p>';
         }
         return $this->buffer_end();
+    }
+
+    public function handle_expman_server_create() {
+        if ( ! current_user_can( 'manage_options' ) ) {
+            wp_die( 'No permission' );
+        }
+
+        if ( empty( $_POST['expman_server_create_nonce'] ) || ! wp_verify_nonce( $_POST['expman_server_create_nonce'], 'expman_server_create' ) ) {
+            wp_die( 'Bad nonce' );
+        }
+
+        $service_tag = strtoupper( sanitize_text_field( $_POST['service_tag'] ?? '' ) );
+        $customer_number = sanitize_text_field( $_POST['customer_number'] ?? '' );
+        $customer_name = sanitize_text_field( $_POST['customer_name'] ?? '' );
+        $sync_now = ! empty( $_POST['sync_now'] );
+
+        if ( $service_tag === '' ) {
+            wp_safe_redirect( add_query_arg( array( 'page' => 'expman_servers', 'msg' => 'missing_tag' ), admin_url( 'admin.php' ) ) );
+            exit;
+        }
+
+        require_once plugin_dir_path(__FILE__) . 'includes/admin/class-expman-servers-page.php';
+        $page = new Expman_Servers_Page( self::OPTION_KEY, self::VERSION );
+
+        global $wpdb;
+        $table = $wpdb->prefix . Expman_Servers_Page::TABLE_SERVERS;
+
+        $wpdb->insert(
+            $table,
+            array(
+                'option_key'               => self::OPTION_KEY,
+                'customer_number_snapshot' => $customer_number !== '' ? $customer_number : null,
+                'customer_name_snapshot'   => $customer_name !== '' ? $customer_name : null,
+                'service_tag'              => $service_tag,
+                'created_at'               => current_time( 'mysql' ),
+                'updated_at'               => current_time( 'mysql' ),
+            ),
+            array( '%s', '%s', '%s', '%s', '%s', '%s' )
+        );
+
+        $new_id = (int) $wpdb->insert_id;
+
+        if ( ! $new_id ) {
+            wp_safe_redirect( add_query_arg( array( 'page' => 'expman_servers', 'msg' => 'db_error' ), admin_url( 'admin.php' ) ) );
+            exit;
+        }
+
+        if ( $sync_now ) {
+            $page->get_actions()->set_option_key( self::OPTION_KEY );
+            $page->get_actions()->set_dell( $page->get_dell() );
+            $page->get_actions()->sync_server_by_id( $new_id );
+        }
+
+        wp_safe_redirect( add_query_arg( array( 'page' => 'expman_servers', 'msg' => 'created' ), admin_url( 'admin.php' ) ) );
+        exit;
     }
 
     public function shortcode_generic( $atts ) {

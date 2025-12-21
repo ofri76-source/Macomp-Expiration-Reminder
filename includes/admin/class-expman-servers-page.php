@@ -66,6 +66,10 @@ class Expman_Servers_Page {
         return $this->dell ? $this->dell->get_settings() : array();
     }
 
+    public function get_dell() {
+        return $this->dell;
+    }
+
     public static function install_tables() {
         Expman_Servers_Schema::install_tables();
     }

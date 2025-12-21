@@ -328,6 +328,14 @@ class Expman_Servers_Actions {
         $this->sync_servers_by_ids( array( $id ) );
     }
 
+    public function sync_server_by_id( $id ) {
+        $id = intval( $id );
+        if ( $id <= 0 ) {
+            return;
+        }
+        $this->sync_servers_by_ids( array( $id ) );
+    }
+
     public function action_sync_bulk() {
         $ids = array_map( 'intval', (array) ( $_POST['server_ids'] ?? array() ) );
         $ids = array_filter( $ids );
