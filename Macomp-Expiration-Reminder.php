@@ -17,6 +17,8 @@ require_once plugin_dir_path(__FILE__) . 'includes/admin/class-expman-generic-it
 require_once plugin_dir_path(__FILE__) . 'includes/admin/class-expman-trash-page.php';
 require_once plugin_dir_path(__FILE__) . 'includes/admin/class-expman-logs-page.php';
 require_once plugin_dir_path(__FILE__) . 'includes/admin/class-expman-settings-page.php';
+require_once plugin_dir_path(__FILE__) . 'includes/admin/domains/class-drm-manager.php';
+require_once plugin_dir_path(__FILE__) . 'includes/admin/class-expman-domains-page.php';
 
 class Expiry_Manager_Plugin {
 
@@ -38,6 +40,7 @@ class Expiry_Manager_Plugin {
         register_activation_hook( __FILE__, array( $this, 'on_activate' ) );
         add_action( 'admin_menu', array( $this, 'register_admin_menu' ) );
         add_action( 'init', array( $this, 'register_shortcodes' ) );
+        add_action( 'init', array( $this, 'init_drm_manager' ) );
         add_action( 'admin_init', array( $this, 'maybe_install_tables' ) );
         add_action( 'wp_ajax_expman_customer_search', array( $this, 'ajax_customer_search' ) );
         add_action( 'admin_post_expman_server_create', array( $this, 'handle_expman_server_create' ) );
@@ -90,7 +93,6 @@ class Expiry_Manager_Plugin {
         if ( class_exists('Expman_Servers_Page') ) {
             Expman_Servers_Page::install_tables();
         }
-
         if ( ! get_option( self::OPTION_KEY ) ) {
             add_option( self::OPTION_KEY, array(
                 'yellow_threshold'   => 90,
@@ -125,7 +127,7 @@ class Expiry_Manager_Plugin {
             function() { ( new Expman_Generic_Items_Page( self::OPTION_KEY, 'certs', 'תעודות אבטחה' ) )->render_page(); });
 
         add_submenu_page('expman_dashboard', 'דומיינים', 'דומיינים', 'manage_options', 'expman_domains',
-            function() { ( new Expman_Generic_Items_Page( self::OPTION_KEY, 'domains', 'דומיינים' ) )->render_page(); });
+            function() { ( new Expman_Domains_Page() )->render_page(); });
 
         add_submenu_page('expman_dashboard', 'שרתים', 'שרתים', 'manage_options', 'expman_servers',
             function() { ( new Expman_Servers_Page( self::OPTION_KEY, self::VERSION ) )->render_page(); });
@@ -225,6 +227,12 @@ class Expiry_Manager_Plugin {
         wp_send_json( array( 'items' => $items ) );
     }
 
+    public function init_drm_manager() {
+        if ( class_exists( 'DRM_Manager' ) ) {
+            DRM_Manager::instance();
+        }
+    }
+
 /* ---------- SHORTCODES (Public Pages) ---------- */
 
     public function register_shortcodes() {
@@ -281,7 +289,58 @@ class Expiry_Manager_Plugin {
         $guard = $this->shortcode_guard();
         if ( $guard !== '' ) { return $guard; }
 
-        return $this->shortcode_generic( array( 'type' => 'domains', 'title' => 'דומיינים' ) );
+        $this->buffer_start();
+        if ( class_exists( 'DRM_Manager' ) ) {
+            $drm = DRM_Manager::instance();
+            $drm->enqueue_front_assets();
+
+            if ( class_exists( 'Expman_Nav' ) ) {
+                Expman_Nav::render_public_nav( self::OPTION_KEY );
+            }
+
+            $tab = isset( $_GET['tab'] ) ? sanitize_key( $_GET['tab'] ) : 'domains';
+
+            $tabs = array(
+                'domains'  => 'ניהול דומיינים',
+                'bin'      => 'סל מחזור',
+                'io'       => 'ייבוא/ייצוא',
+                'settings' => 'הגדרות',
+            );
+
+            $base_url = get_permalink();
+
+            echo '<div class="wrap">';
+            echo '<h1 style="margin:10px 0 16px;">דומיינים</h1>';
+            echo '<h2 class="nav-tab-wrapper" style="direction:rtl;text-align:right;">';
+            foreach ( $tabs as $key => $label ) {
+                $url = add_query_arg( 'tab', $key, $base_url );
+                $cls = 'nav-tab' . ( $tab === $key ? ' nav-tab-active' : '' );
+                echo '<a class="' . esc_attr( $cls ) . '" href="' . esc_url( $url ) . '">' . esc_html( $label ) . '</a>';
+            }
+            echo '</h2>';
+
+            echo '<div style="margin-top:12px;">';
+            switch ( $tab ) {
+                case 'bin':
+                    $drm->render_bin();
+                    break;
+                case 'io':
+                    $drm->render_io();
+                    break;
+                case 'settings':
+                    $drm->render_settings();
+                    break;
+                case 'domains':
+                default:
+                    $drm->render_admin();
+                    break;
+            }
+            echo '</div>';
+            echo '</div>';
+        } else {
+            echo '<p>Domains module not loaded.</p>';
+        }
+        return $this->buffer_end();
     }
 
     public function shortcode_servers() {
