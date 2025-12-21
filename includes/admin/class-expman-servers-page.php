@@ -118,19 +118,26 @@ class Expman_Servers_Page {
     }
 
     private function handle_actions() {
-        if ( empty( $_POST['expman_action'] ) ) {
-            return;
-        }
-        if ( empty( $_POST['_wpnonce'] ) || ! wp_verify_nonce( $_POST['_wpnonce'], 'expman_servers' ) ) {
+        if ( empty( $_POST['expman_action'] ) && empty( $_POST['action'] ) ) {
             return;
         }
 
-        $action = sanitize_key( $_POST['expman_action'] );
+        $action = sanitize_key( $_POST['action'] ?? $_POST['expman_action'] );
         $redirect_tab = sanitize_key( $_POST['tab'] ?? '' );
 
+        if ( $action === 'expman_save_server' ) {
+            if ( empty( $_POST['_wpnonce'] ) || ! wp_verify_nonce( $_POST['_wpnonce'], 'expman_save_server' ) ) {
+                return;
+            }
+        } else {
+            if ( empty( $_POST['_wpnonce'] ) || ! wp_verify_nonce( $_POST['_wpnonce'], 'expman_servers' ) ) {
+                return;
+            }
+        }
+
         switch ( $action ) {
-            case 'save_server':
-                $this->actions->action_save_server();
+            case 'expman_save_server':
+                $this->actions->save_server_from_request();
                 break;
             case 'trash_server':
                 $this->actions->action_trash_server();

@@ -232,9 +232,10 @@ class Expman_Servers_UI {
         $thresholds = $actions->get_summary_counts();
 
         echo '<div class="expman-table-wrap">';
-        echo '<form method="post">';
+        echo '<form method="post" id="expman-servers-bulk-form">';
         wp_nonce_field( 'expman_servers' );
         echo '<input type="hidden" name="expman_action" value="sync_bulk">';
+        echo '<input type="hidden" name="server_id" value="">';
         echo '<table class="widefat" style="margin-bottom:10px;">';
         echo '<thead>';
         echo '<tr>';
@@ -287,18 +288,8 @@ class Expman_Servers_UI {
             echo '<td class="' . esc_attr( $days_class ) . '">' . esc_html( $row->ending_on ) . '</td>';
             echo '<td class="expman-align-left" style="white-space:nowrap;">';
             echo '<button type="button" class="button expman-edit-toggle" data-id="' . esc_attr( $row->id ) . '">ערוך</button> ';
-            echo '<form method="post" style="display:inline;">';
-            wp_nonce_field( 'expman_servers' );
-            echo '<input type="hidden" name="expman_action" value="sync_single">';
-            echo '<input type="hidden" name="server_id" value="' . esc_attr( $row->id ) . '">';
-            echo '<button type="submit" class="button">Sync</button>';
-            echo '</form> ';
-            echo '<form method="post" style="display:inline;" onsubmit="return confirm(\'להעביר לסל המחזור?\');">';
-            wp_nonce_field( 'expman_servers' );
-            echo '<input type="hidden" name="expman_action" value="trash_server">';
-            echo '<input type="hidden" name="server_id" value="' . esc_attr( $row->id ) . '">';
-            echo '<button type="submit" class="button">מחק</button>';
-            echo '</form>';
+            echo '<button type="button" class="button expman-row-action" data-action="sync_single" data-id="' . esc_attr( $row->id ) . '">Sync</button> ';
+            echo '<button type="button" class="button expman-row-action" data-action="trash_server" data-id="' . esc_attr( $row->id ) . '" data-confirm="להעביר לסל המחזור?">מחק</button>';
             echo '</td>';
             echo '</tr>';
 
@@ -322,7 +313,7 @@ class Expman_Servers_UI {
         }
 
         echo '</tbody></table>';
-        echo '<button type="submit" class="expman-btn">Sync מסומנים</button>';
+        echo '<button type="submit" class="expman-btn" name="expman_action" value="sync_bulk">Sync מסומנים</button>';
         echo '</form>';
         echo '</div>';
 
@@ -369,6 +360,22 @@ class Expman_Servers_UI {
           window.expmanApplyServerFilters=applyFilters;
           document.querySelectorAll(".expman-filter-input").forEach(input=>{
             input.addEventListener("input",function(){applyFilters();});
+          });
+          const bulkForm=document.getElementById("expman-servers-bulk-form");
+          const hiddenAction=bulkForm ? bulkForm.querySelector("input[name=\\\"expman_action\\\"]") : null;
+          const hiddenId=bulkForm ? bulkForm.querySelector("input[name=\\\"server_id\\\"]") : null;
+          document.querySelectorAll(".expman-row-action").forEach(btn=>{
+            btn.addEventListener("click",function(e){
+              e.preventDefault();
+              if(!bulkForm || !hiddenAction || !hiddenId){return;}
+              const action=btn.getAttribute("data-action");
+              const id=btn.getAttribute("data-id");
+              const confirmMsg=btn.getAttribute("data-confirm");
+              if(confirmMsg && !window.confirm(confirmMsg)){return;}
+              hiddenAction.value=action;
+              hiddenId.value=id;
+              bulkForm.submit();
+            });
           });
           document.querySelectorAll(".expman-edit-toggle").forEach(btn=>{
             btn.addEventListener("click",function(){
@@ -420,7 +427,8 @@ class Expman_Servers_UI {
         </style>';
 
         echo '<form method="post" class="expman-servers-form" style="margin:0;">';
-        wp_nonce_field( 'expman_servers' );
+        wp_nonce_field( 'expman_save_server' );
+        echo '<input type="hidden" name="action" value="expman_save_server">';
         echo '<input type="hidden" name="server_id" value="' . esc_attr( $id ) . '">';
         echo '<input type="hidden" name="customer_id" class="expman-customer-id" value="' . esc_attr( $row['customer_id'] ) . '">';
 
@@ -442,7 +450,7 @@ class Expman_Servers_UI {
         echo '</div>';
 
         echo '<div class="expman-servers-actions">';
-        echo '<button type="submit" name="expman_action" value="save_server" class="button button-primary">שמירה</button>';
+        echo '<button type="submit" class="button button-primary">שמור</button>';
         echo '<button type="button" class="button" data-expman-cancel>ביטול</button>';
         echo '</div>';
 

@@ -136,6 +136,10 @@ class Expman_Servers_Actions {
         }
     }
 
+    public function save_server_from_request() {
+        return $this->action_save_server();
+    }
+
     public function action_trash_server() {
         global $wpdb;
         $servers_table = $wpdb->prefix . Expman_Servers_Page::TABLE_SERVERS;
