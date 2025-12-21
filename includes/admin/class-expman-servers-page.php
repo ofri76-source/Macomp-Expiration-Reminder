@@ -122,7 +122,12 @@ class Expman_Servers_Page {
             return;
         }
 
-        $action = sanitize_key( $_POST['action'] ?? $_POST['expman_action'] );
+        $action = isset( $_REQUEST['action'] ) ? sanitize_key( $_REQUEST['action'] ) : '';
+        if ( $action === '' && ! empty( $_POST['expman_action'] ) ) {
+            if ( $_POST['expman_action'] === 'save_server' ) {
+                $action = 'expman_save_server';
+            }
+        }
         $redirect_tab = sanitize_key( $_POST['tab'] ?? '' );
 
         if ( $action === 'expman_save_server' ) {
