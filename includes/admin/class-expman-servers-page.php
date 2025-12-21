@@ -70,6 +70,35 @@ class Expman_Servers_Page {
         Expman_Servers_Schema::install_tables();
     }
 
+    public static function render_public_page( $option_key, $version = '' ) {
+        if ( ! is_user_logged_in() ) {
+            echo '<div class="notice notice-error"><p>אין הרשאה. יש להתחבר.</p></div>';
+            return;
+        }
+
+        self::install_if_missing();
+        $self = new self( (string) $option_key, (string) $version );
+        $self->schema->ensure_schema();
+        $self->handle_actions();
+        $self->render();
+    }
+
+    private static function install_if_missing() {
+        global $wpdb;
+        $servers_table = $wpdb->prefix . self::TABLE_SERVERS;
+        $exists = $wpdb->get_var( $wpdb->prepare( "SHOW TABLES LIKE %s", $servers_table ) );
+        if ( $exists !== $servers_table ) {
+            self::install_tables();
+            return;
+        }
+
+        $logs_table = $wpdb->prefix . self::TABLE_SERVER_LOGS;
+        $logs_exists = $wpdb->get_var( $wpdb->prepare( "SHOW TABLES LIKE %s", $logs_table ) );
+        if ( $logs_exists !== $logs_table ) {
+            self::install_tables();
+        }
+    }
+
     public function render_page() {
         if ( ! current_user_can( 'manage_options' ) ) {
             echo '<div class="notice notice-error"><p>אין הרשאה.</p></div>';

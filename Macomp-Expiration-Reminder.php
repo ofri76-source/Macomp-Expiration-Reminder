@@ -286,7 +286,13 @@ class Expiry_Manager_Plugin {
         $guard = $this->shortcode_guard();
         if ( $guard !== '' ) { return $guard; }
 
-        return $this->shortcode_generic( array( 'type' => 'servers', 'title' => 'שרתים' ) );
+        $this->buffer_start();
+        if ( class_exists( 'Expman_Servers_Page' ) ) {
+            Expman_Servers_Page::render_public_page( self::OPTION_KEY, self::VERSION );
+        } else {
+            echo '<p>Servers module not loaded.</p>';
+        }
+        return $this->buffer_end();
     }
 
     public function shortcode_trash() {
