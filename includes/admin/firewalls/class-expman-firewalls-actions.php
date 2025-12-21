@@ -478,6 +478,33 @@ class Expman_Firewalls_Actions {
         }
     }
 
+    public function action_delete_firewall_permanently() {
+        global $wpdb;
+        $fw_table = $wpdb->prefix . Expman_Firewalls_Page::TABLE_FIREWALLS;
+        $id = isset( $_POST['firewall_id'] ) ? intval( $_POST['firewall_id'] ) : 0;
+        if ( $id <= 0 ) {
+            return;
+        }
+
+        $ok = $wpdb->delete( $fw_table, array( 'id' => $id ), array( '%d' ) );
+        if ( $ok === false ) {
+            $this->logger->log_firewall_event( $id, 'delete_failed', 'מחיקה לצמיתות נכשלה', array(
+                'error' => $wpdb->last_error,
+                'query' => $wpdb->last_query,
+                'table' => $fw_table,
+            ), 'error' );
+            set_transient( 'expman_firewalls_errors', array( 'מחיקה לצמיתות נכשלה: ' . $wpdb->last_error ), 90 );
+        } elseif ( $ok === 0 ) {
+            $this->logger->log_firewall_event( $id, 'delete_failed', 'מחיקה לצמיתות לא בוצעה', array(
+                'query' => $wpdb->last_query,
+                'table' => $fw_table,
+            ), 'warning' );
+            set_transient( 'expman_firewalls_errors', array( 'מחיקה לצמיתות לא בוצעה (ייתכן שהרשומה לא קיימת).' ), 90 );
+        } else {
+            $this->logger->log_firewall_event( $id, 'delete', 'רישום נמחק לצמיתות' );
+        }
+    }
+
     public function action_archive_firewall() {
         global $wpdb;
         $fw_table = $wpdb->prefix . Expman_Firewalls_Page::TABLE_FIREWALLS;
@@ -732,7 +759,7 @@ class Expman_Firewalls_Actions {
                     SUM(CASE WHEN expiry_date IS NOT NULL AND DATEDIFF(expiry_date, CURDATE()) <= %d THEN 1 ELSE 0 END) AS red_count,
                     COUNT(*) AS total_count
                  FROM {$fw_table}
-                 WHERE deleted_at IS NULL AND archived_at IS NULL",
+                 WHERE deleted_at IS NULL AND archived_at IS NULL AND track_only = 0",
                 $yellow,
                 $red + 1,
                 $yellow,

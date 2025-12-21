@@ -79,7 +79,8 @@ class Expman_Firewalls_UI {
 .expman-btn.secondary:hover{background:#dfe9f7;color:#1f3b64;}
 .expman-btn-clear{background:transparent;border:0;box-shadow:none;padding:0 !important;color:#2271b1;cursor:pointer;}
 .expman-btn-clear:hover{text-decoration:underline;}
-.expman-highlight{background:#fff7c0 !important;}
+.expman-highlight{background:transparent !important;}
+.expman-serial-highlight{background:#fff7c0 !important;}
 .expman-frontend .widefat{border:1px solid #c7d1e0;border-radius:8px;overflow:hidden;background:#fff;}
 .expman-frontend .widefat{table-layout:auto;width:100%;}
 .expman-frontend .widefat thead th{background:#2f5ea8;color:#fff;border-bottom:2px solid #244b86;padding:8px;}
@@ -93,11 +94,13 @@ class Expman_Firewalls_UI {
 .expman-frontend .button:not(.button-primary){background:#eef3fb;border-color:#9fb3d9;color:#1f3b64;}
 .expman-frontend .button:hover,.expman-frontend .button.button-primary:hover{background:#264f8f;color:#fff;}
 .expman-frontend .button:not(.button-primary):hover{background:#dfe9f7;color:#1f3b64;}
-.expman-days-green{background:#ecfbf4;}
+.expman-days-green{background:transparent;}
 .expman-days-yellow{background:#fff4e7;}
 .expman-days-red{background:#ffecec;}
+.expman-days-unknown{background:#f1f3f6;}
 .expman-center{text-align:center !important;}
-.expman-serial-col{width:16ch;}
+.expman-serial-col{width:20ch;}
+.expman-customer-col{width:8ch;}
 </style>';
         echo '<style>.expman-frontend.expman-firewalls input,.expman-frontend.expman-firewalls select{height:28px!important;line-height:28px!important;padding:2px 6px!important;font-size:13px!important}.expman-frontend.expman-firewalls textarea{min-height:60px!important;font-size:13px!important;padding:6px!important}.expman-frontend.expman-firewalls .button{padding:4px 10px!important;height:30px!important}</style>';
         echo '<div class="expman-frontend expman-firewalls" style="direction:rtl;">';
@@ -898,7 +901,7 @@ class Expman_Firewalls_UI {
 
         echo '<div class="expman-table-wrap" data-expman-table="' . esc_attr( $uid ) . '">';
         if ( $show_filters ) {
-            echo '<form method="get" style="margin:0 0 10px 0;">';
+            echo '<form method="get" class="expman-filter-form" style="margin:0 0 10px 0;">';
         }
 
         $vendor_opts = $actions->get_distinct_type_values( 'vendor' );
@@ -1006,7 +1009,7 @@ class Expman_Firewalls_UI {
         echo '<table class="widefat striped">';
         echo '<thead><tr>';
 
-        $this->th_sort( 'customer_number', 'מספר לקוח', $orderby, $order, $base );
+        $this->th_sort( 'customer_number', 'מספר לקוח', $orderby, $order, $base, 'expman-customer-col' );
         $this->th_sort( 'customer_name', 'שם לקוח', $orderby, $order, $base );
         $this->th_sort( 'branch', 'סניף', $orderby, $order, $base );
         $this->th_sort( 'serial_number', 'מספר סידורי', $orderby, $order, $base, 'expman-align-left expman-serial-col' );
@@ -1024,7 +1027,7 @@ class Expman_Firewalls_UI {
         if ( $show_filters ) {
             // filter row
             echo '<tr class="expman-filter-row">';
-            echo '<th><input style="width:100%" name="f_customer_number" value="' . esc_attr( $filters['customer_number'] ) . '" placeholder="סינון..."></th>';
+            echo '<th class="expman-customer-col"><input style="width:100%" name="f_customer_number" value="' . esc_attr( $filters['customer_number'] ) . '" placeholder="סינון..."></th>';
             echo '<th><input style="width:100%" name="f_customer_name" value="' . esc_attr( $filters['customer_name'] ) . '" placeholder="סינון..."></th>';
             echo '<th><input style="width:100%" name="f_branch" value="' . esc_attr( $filters['branch'] ) . '" placeholder="סינון..."></th>';
             echo '<th class="expman-align-left expman-serial-col"><input style="width:100%" name="f_serial_number" value="' . esc_attr( $filters['serial_number'] ) . '" placeholder="סינון..."></th>';
@@ -1048,7 +1051,6 @@ class Expman_Firewalls_UI {
             }
             echo '<th></th>'; // access
             echo '<th style="white-space:nowrap;">';
-            echo '<button class="expman-btn secondary" type="submit">סנן</button> ';
             if ( $clear_url ) {
                 echo '<a class="expman-btn secondary" style="display:inline-block;text-decoration:none;" href="' . esc_url( $clear_url ) . '">נקה</a>';
             }
@@ -1081,14 +1083,23 @@ class Expman_Firewalls_UI {
                 $days = '';
             }
             $days_class = '';
+            $status_key = 'unknown';
             if ( $days !== '' ) {
                 if ( $days <= $red_threshold ) {
                     $days_class = 'expman-days-red';
+                    $status_key = 'red';
                 } elseif ( $days <= $yellow_threshold ) {
                     $days_class = 'expman-days-yellow';
+                    $status_key = 'yellow';
                 } else {
-                    $days_class = 'expman-days-green';
+                    $status_key = 'green';
                 }
+            } else {
+                $days_class = 'expman-days-unknown';
+            }
+            if ( intval( $r->track_only ) === 1 ) {
+                $days_class = 'expman-days-unknown';
+                $status_key = 'unknown';
             }
             $status_key = $days_class !== '' ? str_replace( 'expman-days-', '', $days_class ) : 'unknown';
 
@@ -1103,14 +1114,14 @@ class Expman_Firewalls_UI {
 
             $highlight = '';
             if ( ! empty( $_GET['highlight'] ) && (string) $r->serial_number === (string) sanitize_text_field( wp_unslash( $_GET['highlight'] ) ) ) {
-                $highlight = ' expman-highlight';
+                $highlight = ' expman-serial-highlight';
             }
             $alt_class = ( $row_index % 2 === 0 ) ? ' expman-row-alt' : '';
-            echo '<tr class="expman-row' . esc_attr( $highlight . $alt_class ) . '" style="cursor:pointer;" data-expman-row-id="' . esc_attr( $r->id ) . '" data-expman-status="' . esc_attr( $status_key ) . '">';
-            echo '<td>' . esc_html( $r->customer_number ?? '' ) . '</td>';
+            echo '<tr class="expman-row' . esc_attr( $alt_class ) . '" style="cursor:pointer;" data-expman-row-id="' . esc_attr( $r->id ) . '" data-expman-status="' . esc_attr( $status_key ) . '">';
+            echo '<td class="expman-customer-col">' . esc_html( $r->customer_number ?? '' ) . '</td>';
             echo '<td>' . esc_html( $r->customer_name ?? '' ) . '</td>';
             echo '<td>' . esc_html( $r->branch ?? '' ) . '</td>';
-            echo '<td class="expman-align-left expman-serial-col">' . esc_html( $r->serial_number ) . '</td>';
+            echo '<td class="expman-align-left expman-serial-col' . esc_attr( $highlight ) . '">' . esc_html( $r->serial_number ) . '</td>';
             echo '<td class="expman-center ' . esc_attr( $days_class ) . '">' . esc_html( $days ) . '</td>';
             echo '<td class="expman-align-left">' . esc_html( $r->vendor ?? '' ) . '</td>';
             echo '<td class="expman-align-left">' . esc_html( $r->model ?? '' ) . '</td>';
@@ -1128,6 +1139,13 @@ class Expman_Firewalls_UI {
                 echo '<input type="hidden" name="expman_action" value="restore_firewall">';
                 echo '<input type="hidden" name="firewall_id" value="' . esc_attr( $r->id ) . '">';
                 echo '<button class="expman-btn secondary" type="submit" style="padding:6px 10px;">שחזור</button>';
+                echo '</form>';
+                echo '<form method="post" style="display:inline;margin-right:6px;">';
+                wp_nonce_field( 'expman_firewalls' );
+                echo '<input type="hidden" name="expman_action" value="delete_firewall_permanently">';
+                echo '<input type="hidden" name="tab" value="trash">';
+                echo '<input type="hidden" name="firewall_id" value="' . esc_attr( $r->id ) . '">';
+                echo '<button class="expman-btn secondary" type="submit" style="padding:6px 10px;" onclick="return confirm(\'למחוק לצמיתות?\');">מחיקה לצמיתות</button>';
                 echo '</form>';
             } elseif ( $table_mode === 'archive' ) {
                 echo '<form method="post" style="display:inline;">';
@@ -1204,8 +1222,19 @@ class Expman_Firewalls_UI {
         echo '</div>';
 
         echo '<script>(function(){
-          const wrap = document.currentScript.previousElementSibling;
-          if(!wrap){return;}';
+          const wrap = document.querySelector("[data-expman-table=\"' . esc_js( $uid ) . '\"]");
+          if(!wrap){return;}
+          const filterForm = wrap.querySelector("form.expman-filter-form");
+          if(filterForm){
+            let t=null;
+            const submit=()=>{ if(t){clearTimeout(t);} t=setTimeout(()=>filterForm.submit(), 350); };
+            wrap.querySelectorAll(".expman-filter-row input").forEach(function(input){
+              input.addEventListener("input", submit);
+            });
+            wrap.querySelectorAll(".expman-filter-row select").forEach(function(select){
+              select.addEventListener("change", submit);
+            });
+          }';
         echo 'wrap.querySelectorAll("tr.expman-row").forEach(function(tr){tr.addEventListener("click",function(){';
         echo 'var id=tr.querySelector("a.expman-edit-btn")?tr.querySelector("a.expman-edit-btn").getAttribute("data-id"):null;';
         echo 'if(!id) return; var d=wrap.querySelector("tr.expman-details[data-for=\'"+id+"\']"); if(!d) return;';
