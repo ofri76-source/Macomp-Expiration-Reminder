@@ -12,6 +12,7 @@ if ( ! defined( 'ABSPATH' ) ) { exit; }
 require_once plugin_dir_path(__FILE__) . 'includes/admin/class-expman-nav.php';
 require_once plugin_dir_path(__FILE__) . 'includes/admin/class-expman-dashboard-page.php';
 require_once plugin_dir_path(__FILE__) . 'includes/admin/class-expman-firewalls-page.php';
+require_once plugin_dir_path(__FILE__) . 'includes/admin/class-expman-servers-page.php';
 require_once plugin_dir_path(__FILE__) . 'includes/admin/class-expman-generic-items-page.php';
 require_once plugin_dir_path(__FILE__) . 'includes/admin/class-expman-trash-page.php';
 require_once plugin_dir_path(__FILE__) . 'includes/admin/class-expman-logs-page.php';
@@ -85,6 +86,9 @@ class Expiry_Manager_Plugin {
         if ( class_exists('Expman_Firewalls_Page') ) {
             Expman_Firewalls_Page::install_tables();
         }
+        if ( class_exists('Expman_Servers_Page') ) {
+            Expman_Servers_Page::install_tables();
+        }
 
         if ( ! get_option( self::OPTION_KEY ) ) {
             add_option( self::OPTION_KEY, array(
@@ -122,7 +126,7 @@ class Expiry_Manager_Plugin {
             function() { ( new Expman_Generic_Items_Page( self::OPTION_KEY, 'domains', 'דומיינים' ) )->render_page(); });
 
         add_submenu_page('expman_dashboard', 'שרתים', 'שרתים', 'manage_options', 'expman_servers',
-            function() { ( new Expman_Generic_Items_Page( self::OPTION_KEY, 'servers', 'שרתים' ) )->render_page(); });
+            function() { ( new Expman_Servers_Page( self::OPTION_KEY, self::VERSION ) )->render_page(); });
 
         add_submenu_page('expman_dashboard', 'Trash', 'Trash', 'manage_options', 'expman_trash',
             function() { ( new Expman_Trash_Page( self::OPTION_KEY ) )->render_page(); });
@@ -147,6 +151,14 @@ class Expiry_Manager_Plugin {
         $exists   = $wpdb->get_var( $wpdb->prepare( "SHOW TABLES LIKE %s", $fw_table ) );
         if ( $exists !== $fw_table ) {
             Expman_Firewalls_Page::install_tables();
+        }
+
+        if ( class_exists( 'Expman_Servers_Page' ) ) {
+            $servers_table = $wpdb->prefix . Expman_Servers_Page::TABLE_SERVERS;
+            $servers_exists = $wpdb->get_var( $wpdb->prepare( "SHOW TABLES LIKE %s", $servers_table ) );
+            if ( $servers_exists !== $servers_table ) {
+                Expman_Servers_Page::install_tables();
+            }
         }
     }
 
