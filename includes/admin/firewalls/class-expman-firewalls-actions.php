@@ -798,6 +798,8 @@ class Expman_Firewalls_Actions {
             return;
         }
 
+        $bulk_ids = array_map( 'intval', (array) ( $_POST['bulk_ids'] ?? array() ) );
+        $bulk_input = (array) ( $_POST['bulk'] ?? array() );
         $rows = $wpdb->get_results( $wpdb->prepare(
             "SELECT id FROM {$stage_table} WHERE import_batch_id=%s AND status IN ('pending','failed') ORDER BY id ASC",
             $batch_id
@@ -808,7 +810,15 @@ class Expman_Firewalls_Actions {
 
         $failures = array();
         foreach ( $rows as $row ) {
-            $result = $this->assign_stage_row( intval( $row->id ), array(), $batch_id );
+            $stage_id = intval( $row->id );
+            if ( ! empty( $bulk_ids ) && ! in_array( $stage_id, $bulk_ids, true ) ) {
+                continue;
+            }
+            $input = array();
+            if ( isset( $bulk_input[ $stage_id ] ) && is_array( $bulk_input[ $stage_id ] ) ) {
+                $input = $bulk_input[ $stage_id ];
+            }
+            $result = $this->assign_stage_row( $stage_id, $input, $batch_id );
             if ( ! empty( $result['error'] ) ) {
                 $failures[] = $result;
             }
