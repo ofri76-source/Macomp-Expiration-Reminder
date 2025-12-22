@@ -92,9 +92,6 @@ class Expiry_Manager_Plugin {
         if ( class_exists('Expman_Servers_Page') ) {
             Expman_Servers_Page::install_tables();
         }
-        if ( class_exists( 'DRM_Manager' ) ) {
-            ( new DRM_Manager() )->on_activate();
-        }
 
         if ( ! get_option( self::OPTION_KEY ) ) {
             add_option( self::OPTION_KEY, array(
