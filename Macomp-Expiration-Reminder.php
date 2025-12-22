@@ -17,6 +17,8 @@ require_once plugin_dir_path(__FILE__) . 'includes/admin/class-expman-generic-it
 require_once plugin_dir_path(__FILE__) . 'includes/admin/class-expman-trash-page.php';
 require_once plugin_dir_path(__FILE__) . 'includes/admin/class-expman-logs-page.php';
 require_once plugin_dir_path(__FILE__) . 'includes/admin/class-expman-settings-page.php';
+require_once plugin_dir_path(__FILE__) . 'includes/admin/domains/class-drm-manager.php';
+require_once plugin_dir_path(__FILE__) . 'includes/admin/class-expman-domains-page.php';
 
 class Expiry_Manager_Plugin {
 
@@ -93,12 +95,13 @@ class Expiry_Manager_Plugin {
 
         if ( ! get_option( self::OPTION_KEY ) ) {
             add_option( self::OPTION_KEY, array(
-                'yellow_threshold'   => 60,
+                'yellow_threshold'   => 90,
                 'red_threshold'      => 30,
                 'log_retention_days' => 90,
                 'customers_table'    => $wpdb->prefix . 'customers',
                 'public_urls'        => array(),
                 'env'                => 'test',
+                'show_bulk_tab'      => 1,
             ) );
         }
     }
@@ -268,7 +271,21 @@ class Expiry_Manager_Plugin {
         $guard = $this->shortcode_guard();
         if ( $guard !== '' ) { return $guard; }
 
-        return $this->shortcode_generic( array( 'type' => 'domains', 'title' => 'דומיינים' ) );
+        if ( ! class_exists( 'DRM_Manager' ) ) {
+            return '<div>DRM_Manager missing</div>';
+        }
+
+        $drm = new DRM_Manager();
+        if ( method_exists( $drm, 'enqueue_front_assets' ) ) {
+            $drm->enqueue_front_assets();
+        }
+
+        $this->buffer_start();
+        if ( class_exists( 'Expman_Nav' ) ) {
+            Expman_Nav::render_public_nav( self::OPTION_KEY, self::VERSION );
+        }
+        $drm->render_admin();
+        return $this->buffer_end();
     }
 
     public function shortcode_servers() {
