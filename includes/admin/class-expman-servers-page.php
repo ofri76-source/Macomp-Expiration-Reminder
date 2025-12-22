@@ -75,11 +75,6 @@ class Expman_Servers_Page {
     }
 
     public static function render_public_page( $option_key, $version = '' ) {
-        if ( ! is_user_logged_in() ) {
-            echo '<div class="notice notice-error"><p>אין הרשאה. יש להתחבר.</p></div>';
-            return;
-        }
-
         self::install_if_missing();
         $self = new self( (string) $option_key, (string) $version );
         $self->schema->ensure_schema();
@@ -104,11 +99,6 @@ class Expman_Servers_Page {
     }
 
     public function render_page() {
-        if ( ! current_user_can( 'manage_options' ) ) {
-            echo '<div class="notice notice-error"><p>אין הרשאה.</p></div>';
-            return;
-        }
-
         $this->schema->ensure_schema();
         $this->handle_actions();
         $this->render();

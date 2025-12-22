@@ -969,7 +969,7 @@ class Expman_Firewalls_UI {
 
         echo '<div class="expman-table-wrap" data-expman-table="' . esc_attr( $uid ) . '">';
         if ( $show_filters ) {
-            echo '<form method="get" class="expman-filter-form" style="margin:0 0 10px 0;">';
+            echo '<form method="get" id="expman-fw-filter-' . esc_attr( $uid ) . '" class="expman-filter-form" style="margin:0 0 10px 0;">';
         }
 
         if ( $show_filters ) {
@@ -982,6 +982,7 @@ class Expman_Firewalls_UI {
                 if ( strpos( $k, 'f_' ) === 0 || in_array( $k, array( 'orderby','order' ), true ) ) { continue; }
                 echo '<input type="hidden" name="' . esc_attr( $k ) . '" value="' . esc_attr( $v ) . '">';
             }
+            echo '</form>';
         }
 
         echo '<table class="widefat striped">';
@@ -1005,20 +1006,20 @@ class Expman_Firewalls_UI {
         if ( $show_filters ) {
             // filter row
             echo '<tr class="expman-filter-row">';
-            echo '<th class="expman-customer-col"><input style="width:100%" name="f_customer_number" value="' . esc_attr( $filters['customer_number'] ) . '" placeholder="סינון..."></th>';
-            echo '<th><input style="width:100%" name="f_customer_name" value="' . esc_attr( $filters['customer_name'] ) . '" placeholder="סינון..."></th>';
-            echo '<th><input style="width:100%" name="f_branch" value="' . esc_attr( $filters['branch'] ) . '" placeholder="סינון..."></th>';
-            echo '<th class="expman-align-left expman-serial-col"><input style="width:100%" name="f_serial_number" value="' . esc_attr( $filters['serial_number'] ) . '" placeholder="סינון..."></th>';
+            echo '<th class="expman-customer-col"><input form="expman-fw-filter-' . esc_attr( $uid ) . '" style="width:100%" name="f_customer_number" value="' . esc_attr( $filters['customer_number'] ) . '" placeholder="סינון..."></th>';
+            echo '<th><input form="expman-fw-filter-' . esc_attr( $uid ) . '" style="width:100%" name="f_customer_name" value="' . esc_attr( $filters['customer_name'] ) . '" placeholder="סינון..."></th>';
+            echo '<th><input form="expman-fw-filter-' . esc_attr( $uid ) . '" style="width:100%" name="f_branch" value="' . esc_attr( $filters['branch'] ) . '" placeholder="סינון..."></th>';
+            echo '<th class="expman-align-left expman-serial-col"><input form="expman-fw-filter-' . esc_attr( $uid ) . '" style="width:100%" name="f_serial_number" value="' . esc_attr( $filters['serial_number'] ) . '" placeholder="סינון..."></th>';
             echo '<th></th>'; // days_to_renew
-            echo '<th class="expman-align-left"><input style="width:100%" name="f_vendor" value="' . esc_attr( $filters['vendor'] ) . '" placeholder="סינון..."></th>';
-            echo '<th class="expman-align-left"><input style="width:100%" name="f_model" value="' . esc_attr( $filters['model'] ) . '" placeholder="סינון..."></th>';
+            echo '<th class="expman-align-left"><input form="expman-fw-filter-' . esc_attr( $uid ) . '" style="width:100%" name="f_vendor" value="' . esc_attr( $filters['vendor'] ) . '" placeholder="סינון..."></th>';
+            echo '<th class="expman-align-left"><input form="expman-fw-filter-' . esc_attr( $uid ) . '" style="width:100%" name="f_model" value="' . esc_attr( $filters['model'] ) . '" placeholder="סינון..."></th>';
             if ( $show_status_cols && $show_status_filters ) {
-                echo '<th><select name="f_is_managed" style="width:100%;">';
+                echo '<th><select form="expman-fw-filter-' . esc_attr( $uid ) . '" name="f_is_managed" style="width:100%;">';
                 echo '<option value="">הכל</option>';
                 echo '<option value="1" ' . selected( $filters['is_managed'], '1', false ) . '>שלנו</option>';
                 echo '<option value="0" ' . selected( $filters['is_managed'], '0', false ) . '>לא שלנו</option>';
                 echo '</select></th>';
-                echo '<th><select name="f_track_only" style="width:100%;">';
+                echo '<th><select form="expman-fw-filter-' . esc_attr( $uid ) . '" name="f_track_only" style="width:100%;">';
                 echo '<option value="">הכל</option>';
                 echo '<option value="1" ' . selected( $filters['track_only'], '1', false ) . '>כן</option>';
                 echo '<option value="0" ' . selected( $filters['track_only'], '0', false ) . '>לא</option>';
@@ -1206,15 +1207,12 @@ class Expman_Firewalls_UI {
         }
 
         echo '</tbody></table>';
-        if ( $show_filters ) {
-            echo '</form>';
-        }
         echo '</div>';
 
         echo '<script>(function(){
           const wrap = document.querySelector("[data-expman-table=\"' . esc_js( $uid ) . '\"]");
           if(!wrap){return;}
-          const filterForm = wrap.querySelector("form.expman-filter-form");
+          const filterForm = document.getElementById("expman-fw-filter-' . esc_js( $uid ) . '");
           if(filterForm){
             let t=null;
             const applyLocal=()=>{

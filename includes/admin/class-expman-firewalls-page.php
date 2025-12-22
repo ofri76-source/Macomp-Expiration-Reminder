@@ -72,12 +72,6 @@ class Expman_Firewalls_Page {
     }
 
     public static function render_public_page( $option_key, $version = '' ) {
-        // Internal site, but still require login (per earlier requirement)
-        if ( ! is_user_logged_in() ) {
-            echo '<div class="notice notice-error"><p>אין הרשאה. יש להתחבר.</p></div>';
-            return;
-        }
-
         self::install_if_missing();
         $self = new self( (string) $option_key, (string) $version );
         $self->schema->ensure_schema();

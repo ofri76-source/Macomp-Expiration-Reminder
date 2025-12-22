@@ -110,35 +110,35 @@ class Expiry_Manager_Plugin {
         add_menu_page(
             __( 'ניהול תאריכי תפוגה', 'expiry-manager' ),
             __( 'ניהול תאריכי תפוגה', 'expiry-manager' ),
-            'manage_options',
+            'read',
             'expman_dashboard',
             function() { ( new Expman_Dashboard_Page( self::OPTION_KEY ) )->render_page(); },
             'dashicons-clock',
             55
         );
 
-        add_submenu_page('expman_dashboard', 'Dashboard', 'Dashboard', 'manage_options', 'expman_dashboard',
+        add_submenu_page('expman_dashboard', 'Dashboard', 'Dashboard', 'read', 'expman_dashboard',
             function() { ( new Expman_Dashboard_Page( self::OPTION_KEY ) )->render_page(); });
 
-        add_submenu_page('expman_dashboard', 'חומות אש', 'חומות אש', 'manage_options', 'expman_firewalls',
+        add_submenu_page('expman_dashboard', 'חומות אש', 'חומות אש', 'read', 'expman_firewalls',
             function() { ( new Expman_Firewalls_Page( self::OPTION_KEY ) )->render_page(); });
 
-        add_submenu_page('expman_dashboard', 'תעודות', 'תעודות', 'manage_options', 'expman_certs',
+        add_submenu_page('expman_dashboard', 'תעודות', 'תעודות', 'read', 'expman_certs',
             function() { ( new Expman_Generic_Items_Page( self::OPTION_KEY, 'certs', 'תעודות אבטחה' ) )->render_page(); });
 
-        add_submenu_page('expman_dashboard', 'דומיינים', 'דומיינים', 'manage_options', 'expman_domains',
-            function() { ( new Expman_Domains_Page() )->render_page(); });
+        add_submenu_page('expman_dashboard', 'דומיינים', 'דומיינים', 'read', 'expman_domains',
+            function() { ( new Expman_Generic_Items_Page( self::OPTION_KEY, 'domains', 'דומיינים' ) )->render_page(); });
 
-        add_submenu_page('expman_dashboard', 'שרתים', 'שרתים', 'manage_options', 'expman_servers',
+        add_submenu_page('expman_dashboard', 'שרתים', 'שרתים', 'read', 'expman_servers',
             function() { ( new Expman_Servers_Page( self::OPTION_KEY, self::VERSION ) )->render_page(); });
 
-        add_submenu_page('expman_dashboard', 'Trash', 'Trash', 'manage_options', 'expman_trash',
+        add_submenu_page('expman_dashboard', 'Trash', 'Trash', 'read', 'expman_trash',
             function() { ( new Expman_Trash_Page( self::OPTION_KEY ) )->render_page(); });
 
-        add_submenu_page('expman_dashboard', 'Logs', 'Logs', 'manage_options', 'expman_logs',
+        add_submenu_page('expman_dashboard', 'Logs', 'Logs', 'read', 'expman_logs',
             function() { ( new Expman_Logs_Page( self::OPTION_KEY ) )->render_page(); });
 
-        add_submenu_page('expman_dashboard', 'Settings', 'Settings', 'manage_options', 'expman_settings',
+        add_submenu_page('expman_dashboard', 'Settings', 'Settings', 'read', 'expman_settings',
             function() { ( new Expman_Settings_Page( self::OPTION_KEY ) )->render_page(); });
     }
 
@@ -173,23 +173,11 @@ class Expiry_Manager_Plugin {
      * You can override via filter: expman_required_capability
      */
     private function shortcode_guard() {
-        $cap = apply_filters( 'expman_required_capability', 'manage_options' );
-        if ( ! is_user_logged_in() ) {
-            return '<div class="notice notice-error"><p>אין הרשאה. יש להתחבר.</p></div>';
-        }
-        if ( ! current_user_can( $cap ) ) {
-            return '<div class="notice notice-error"><p>אין הרשאות מתאימות לצפייה בדף זה.</p></div>';
-        }
         return '';
     }
 
 
     public function ajax_customer_search() {
-        $cap = apply_filters( 'expman_required_capability', 'read' );
-        if ( ! is_user_logged_in() || ! current_user_can( $cap ) ) {
-            wp_send_json( array( 'items' => array() ) );
-        }
-
         $nonce = sanitize_text_field( $_GET['nonce'] ?? '' );
         if ( ! wp_verify_nonce( $nonce, 'expman_customer_search' ) ) {
             wp_send_json( array( 'items' => array() ) );
@@ -332,7 +320,6 @@ class Expiry_Manager_Plugin {
         $guard = $this->shortcode_guard();
         if ( $guard !== '' ) { return $guard; }
 
-        if ( ! current_user_can( 'manage_options' ) ) { return ''; }
         $this->buffer_start();
         if ( class_exists( 'Expman_Settings_Page' ) ) {
             ( new Expman_Settings_Page( self::OPTION_KEY ) )->render_public_page();
@@ -344,10 +331,6 @@ class Expiry_Manager_Plugin {
     }
 
     public function handle_expman_server_create() {
-        if ( ! current_user_can( 'manage_options' ) ) {
-            wp_die( 'No permission' );
-        }
-
         if ( empty( $_POST['expman_server_create_nonce'] ) || ! wp_verify_nonce( $_POST['expman_server_create_nonce'], 'expman_server_create' ) ) {
             wp_die( 'Bad nonce' );
         }
