@@ -7,7 +7,6 @@ class DRM_Manager {
     public function __construct() {
         add_action( 'admin_enqueue_scripts', array( $this, 'admin_assets' ) );
         add_action( 'admin_post_expman_save_domain', array( $this, 'handle_save' ) );
-        add_action( 'admin_init', array( $this, 'maybe_upgrade_table' ) );
     }
 
     public function on_activate() {
@@ -23,6 +22,10 @@ class DRM_Manager {
             return;
         }
         // Assets enqueue logic should be implemented here.
+    }
+
+    public function enqueue_front_assets(): void {
+        // Assets enqueue logic for public view should be implemented here.
     }
 
     public function render_admin() {
@@ -183,7 +186,7 @@ class DRM_Manager {
                 echo '<div style="display:flex;gap:24px;flex-wrap:wrap;">';
                 echo '<div><strong>רשם הדומיין:</strong> ' . esc_html( $row['registrar'] ?? '' ) . '</div>';
                 echo '<div><strong>הערות:</strong> ' . esc_html( $row['notes'] ?? '' ) . '</div>';
-                echo '<div><strong>הערות זמניות:</strong> ' . esc_html( $row['temp_notes'] ?? '' ) . '</div>';
+                echo '<div><strong>הערות זמניות:</strong> ' . esc_html( $row['temp_text'] ?? '' ) . '</div>';
                 echo '</div>';
                 echo '</td></tr>';
 
@@ -246,7 +249,7 @@ class DRM_Manager {
             'payment'         => '',
             'registrar'       => '',
             'notes'           => '',
-            'temp_notes'      => '',
+            'temp_text'       => '',
         );
 
         if ( $row ) {
@@ -260,7 +263,7 @@ class DRM_Manager {
             $data['payment']         = (string) ( $row['payment'] ?? '' );
             $data['registrar']       = (string) ( $row['registrar'] ?? '' );
             $data['notes']           = (string) ( $row['notes'] ?? '' );
-            $data['temp_notes']      = (string) ( $row['temp_notes'] ?? '' );
+            $data['temp_text']       = (string) ( $row['temp_text'] ?? '' );
         }
 
         echo '<style>
@@ -297,7 +300,7 @@ class DRM_Manager {
         echo '<option value="0" ' . selected( $data['payment'], '0', false ) . '>לא שלנו</option>';
         echo '</select></div>';
         echo '<div><label>הערות</label><textarea name="notes" rows="2">' . esc_textarea( $data['notes'] ) . '</textarea></div>';
-        echo '<div><label>הערות זמניות</label><textarea name="temp_notes" rows="2">' . esc_textarea( $data['temp_notes'] ) . '</textarea></div>';
+        echo '<div><label>הערות זמניות</label><textarea name="temp_text" rows="2">' . esc_textarea( $data['temp_text'] ) . '</textarea></div>';
         echo '</div>';
 
         echo '<div class="expman-domains-actions">';
@@ -313,41 +316,17 @@ class DRM_Manager {
         echo '<th' . $class_attr . '><a href="' . esc_url( $url ) . '" style="text-decoration:none;">' . esc_html( $label ) . '</a></th>';
     }
 
-    private function maybe_upgrade_table() {
-        if ( empty( $_GET['page'] ) || $_GET['page'] !== 'expman_domains' ) {
-            return;
-        }
-        $this->ensure_customer_columns();
-    }
-
-    private function ensure_customer_columns() {
+    private function ensure_customer_columns(): void {
         global $wpdb;
         $table = $wpdb->prefix . 'kb_kb_domain_expiry';
-        $db = DB_NAME;
+        $cols = $wpdb->get_col( "SHOW COLUMNS FROM `{$table}`", 0 );
+        $cols = array_map( 'strtolower', (array) $cols );
 
-        $has_customer_number = (int) $wpdb->get_var(
-            $wpdb->prepare(
-                "SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS
-                 WHERE TABLE_SCHEMA=%s AND TABLE_NAME=%s AND COLUMN_NAME='customer_number'",
-                $db,
-                $table
-            )
-        );
-
-        if ( ! $has_customer_number ) {
+        if ( ! in_array( 'customer_number', $cols, true ) ) {
             $wpdb->query( "ALTER TABLE `{$table}` ADD COLUMN `customer_number` VARCHAR(64) NULL AFTER `client_name`" );
         }
 
-        $has_customer_name = (int) $wpdb->get_var(
-            $wpdb->prepare(
-                "SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS
-                 WHERE TABLE_SCHEMA=%s AND TABLE_NAME=%s AND COLUMN_NAME='customer_name'",
-                $db,
-                $table
-            )
-        );
-
-        if ( ! $has_customer_name ) {
+        if ( ! in_array( 'customer_name', $cols, true ) ) {
             $wpdb->query( "ALTER TABLE `{$table}` ADD COLUMN `customer_name` VARCHAR(255) NULL AFTER `customer_number`" );
         }
     }
@@ -364,6 +343,7 @@ class DRM_Manager {
 
         global $wpdb;
         $table = $wpdb->prefix . 'kb_kb_domain_expiry';
+        $this->ensure_customer_columns();
 
         $id = intval( $_POST['domain_id'] ?? 0 );
         $expiry_date = sanitize_text_field( $_POST['expiry_date'] ?? '' );
@@ -389,7 +369,7 @@ class DRM_Manager {
             'ownership'       => sanitize_text_field( $_POST['ownership'] ?? '' ),
             'payment'         => sanitize_text_field( $_POST['payment'] ?? '' ),
             'notes'           => sanitize_textarea_field( $_POST['notes'] ?? '' ),
-            'temp_notes'      => sanitize_textarea_field( $_POST['temp_notes'] ?? '' ),
+            'temp_text'       => sanitize_textarea_field( $_POST['temp_text'] ?? '' ),
         );
 
         if ( $id > 0 ) {
@@ -404,6 +384,7 @@ class DRM_Manager {
     }
 
     private function get_rows( array $filters, $orderby, $order ) {
+        $this->ensure_customer_columns();
         global $wpdb;
         $table = $wpdb->prefix . 'kb_kb_domain_expiry';
 
@@ -447,7 +428,8 @@ class DRM_Manager {
             $order = 'ASC';
         }
 
-        $sql = "SELECT id, client_name, customer_number, customer_name, domain, expiry_date, days_left, registrar, ownership, payment, notes, temp_notes FROM {$table} WHERE " . implode( ' AND ', $where ) . " ORDER BY {$orderby} {$order}, days_left ASC";
+        $order_clause = ( $orderby === 'days_left' ) ? 'days_left ASC' : "{$orderby} {$order}, days_left ASC";
+        $sql = "SELECT id, client_name, customer_number, customer_name, domain, expiry_date, days_left, registrar, ownership, payment, notes, temp_text FROM {$table} WHERE " . implode( ' AND ', $where ) . " ORDER BY {$order_clause}";
         if ( ! empty( $params ) ) {
             $sql = $wpdb->prepare( $sql, $params );
         }
