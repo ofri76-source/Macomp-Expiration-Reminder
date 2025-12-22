@@ -18,9 +18,9 @@ class Expman_Domains_Page {
 
         $tabs = array(
             'main'     => 'טבלה ראשית',
+            'trash'    => 'סל מחזור',
             'settings' => 'הגדרות',
-            'assign'   => 'שיוך לקוח',
-            'bin'      => 'סל מחזור',
+            'map'      => 'שיוך לקוח',
         );
 
         echo '<div class="wrap">';
@@ -39,11 +39,14 @@ class Expman_Domains_Page {
             case 'bin':
                 $this->drm->render_bin();
                 break;
+            case 'trash':
+                $this->drm->render_trash();
+                break;
             case 'settings':
                 $this->drm->render_settings();
                 break;
-            case 'assign':
-                $this->drm->render_assign();
+            case 'map':
+                $this->drm->render_map();
                 break;
             case 'main':
             default:

@@ -7,6 +7,7 @@ class DRM_Manager {
     public function __construct() {
         add_action( 'admin_enqueue_scripts', array( $this, 'admin_assets' ) );
         add_action( 'admin_post_expman_save_domain', array( $this, 'handle_save' ) );
+        add_action( 'wp_ajax_expman_domains_fetch', array( $this, 'handle_fetch' ) );
     }
 
     public function on_activate() {
@@ -29,6 +30,18 @@ class DRM_Manager {
     }
 
     public function render_admin() {
+        $this->render_table( 'main' );
+    }
+
+    public function render_trash() {
+        $this->render_table( 'trash' );
+    }
+
+    public function render_map() {
+        $this->render_table( 'map' );
+    }
+
+    private function render_table( $mode ) {
         $allowed_sort = array(
             'client_name',
             'customer_number',
@@ -59,9 +72,12 @@ class DRM_Manager {
             'days_left'       => sanitize_text_field( $_GET['f_days_left'] ?? '' ),
             'ownership'       => sanitize_text_field( $_GET['f_ownership'] ?? '' ),
             'payment'         => sanitize_text_field( $_GET['f_payment'] ?? '' ),
+            'registrar'       => sanitize_text_field( $_GET['f_registrar'] ?? '' ),
+            'expiry_from'     => sanitize_text_field( $_GET['f_expiry_from'] ?? '' ),
+            'expiry_to'       => sanitize_text_field( $_GET['f_expiry_to'] ?? '' ),
         );
 
-        $rows = $this->get_rows( $filters, $orderby, $order );
+        $rows = $this->get_rows( $filters, $orderby, $order, $mode );
 
         $base = remove_query_arg( array( 'orderby', 'order' ) );
         $clear_url = remove_query_arg(
@@ -74,6 +90,9 @@ class DRM_Manager {
                 'f_days_left',
                 'f_ownership',
                 'f_payment',
+                'f_registrar',
+                'f_expiry_from',
+                'f_expiry_to',
             )
         );
 
@@ -95,15 +114,42 @@ class DRM_Manager {
         .expman-days-yellow{background:#fff4e7;}
         .expman-days-red{background:#ffecec;}
         .expman-days-unknown{background:#f1f3f6;}
+        .expman-domains-wrap h1,
+        .expman-domains-wrap h2,
+        .expman-domains-wrap h3,
+        .expman-domains-wrap .section-title,
+        .expman-domains-wrap label {color:#fff !important;}
+        .expman-domains-wrap table th,
+        .expman-domains-wrap table td {padding-top:6px !important;padding-bottom:6px !important;line-height:1.2 !important;vertical-align:middle !important;}
+        .expman-domains-wrap tr.expman-details td,
+        .expman-domains-wrap tr.expman-edit td {padding-top:10px !important;padding-bottom:10px !important;}
         </style>';
 
-        echo '<div class="expman-frontend expman-domains" style="direction:rtl;">';
+        echo '<div class="expman-domains-wrap expman-frontend expman-domains" style="direction:rtl;">';
         echo '<h2 style="margin-top:10px;">דומיינים</h2>';
-        $this->render_form();
 
-        echo '<form method="get" action="">';
+        if ( $mode === 'main' ) {
+            echo '<div style="display:flex;gap:10px;align-items:center;justify-content:flex-end;margin:10px 0;">';
+            echo '<button type="button" class="expman-btn" data-expman-new>חדש</button>';
+            echo '</div>';
+            echo '<div class="expman-domains-add" style="display:none;">';
+            $this->render_form();
+            echo '</div>';
+        }
+
+        echo '<div class="expman-domains-filters" style="margin:10px 0;display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;">';
+        echo '<div><label>רשם הדומיין</label><input type="text" name="f_registrar" form="expman-domains-filter-form" value="' . esc_attr( $filters['registrar'] ) . '"></div>';
+        echo '<div><label>תאריך תפוגה מ-</label><input type="date" name="f_expiry_from" form="expman-domains-filter-form" value="' . esc_attr( $filters['expiry_from'] ) . '"></div>';
+        echo '<div><label>תאריך תפוגה עד</label><input type="date" name="f_expiry_to" form="expman-domains-filter-form" value="' . esc_attr( $filters['expiry_to'] ) . '"></div>';
+        echo '</div>';
+
+        $ajax_url = esc_url( admin_url( 'admin-ajax.php' ) );
+        $nonce = wp_create_nonce( 'expman_domains_fetch' );
+
+        $tab_value = $mode === 'trash' ? 'trash' : ( $mode === 'map' ? 'map' : 'main' );
+        echo '<form method="get" action="" id="expman-domains-filter-form" data-expman-table data-ajax="' . esc_attr( $ajax_url ) . '" data-nonce="' . esc_attr( $nonce ) . '" data-mode="' . esc_attr( $mode ) . '">';
         echo '<input type="hidden" name="page" value="expman_domains">';
-        echo '<input type="hidden" name="tab" value="main">';
+        echo '<input type="hidden" name="tab" value="' . esc_attr( $tab_value ) . '">';
 
         echo '<table class="widefat striped">';
         echo '<thead><tr>';
@@ -143,98 +189,111 @@ class DRM_Manager {
         echo '</th>';
         echo '</tr>';
 
-        echo '</thead><tbody>';
-
-        if ( empty( $rows ) ) {
-            echo '<tr><td colspan="9">אין נתונים.</td></tr>';
-        } else {
-            $row_index = 0;
-            foreach ( $rows as $row ) {
-                $row_index++;
-                $row_id = intval( $row['id'] ?? $row_index );
-                $days_left = $row['days_left'] ?? '';
-                $days_class = 'expman-days-unknown';
-                if ( $days_left !== '' ) {
-                    $days_value = intval( $days_left );
-                    if ( $days_value <= 7 ) {
-                        $days_class = 'expman-days-red';
-                    } elseif ( $days_value <= 30 ) {
-                        $days_class = 'expman-days-yellow';
-                    } else {
-                        $days_class = 'expman-days-green';
-                    }
-                }
-
-                $row_class = $row_index % 2 === 0 ? 'expman-row-alt' : '';
-                echo '<tr class="expman-row ' . esc_attr( $row_class ) . '" data-id="' . esc_attr( $row_id ) . '">';
-                echo '<td>' . esc_html( $row['client_name'] ?? '' ) . '</td>';
-                echo '<td>' . esc_html( $row['customer_number'] ?? '' ) . '</td>';
-                echo '<td>' . esc_html( $row['customer_name'] ?? '' ) . '</td>';
-                echo '<td>' . esc_html( $row['domain'] ?? '' ) . '</td>';
-                echo '<td>' . esc_html( $row['expiry_date'] ?? '' ) . '</td>';
-                echo '<td class="' . esc_attr( $days_class ) . '">' . esc_html( $days_left ) . '</td>';
-                echo '<td>' . esc_html( $row['ownership'] ?? '' ) . '</td>';
-                echo '<td>' . esc_html( $row['payment'] ?? '' ) . '</td>';
-                echo '<td style="display:flex;gap:6px;flex-wrap:wrap;">';
-                echo '<button type="button" class="expman-btn secondary expman-toggle-details" data-id="' . esc_attr( $row_id ) . '">פרטים</button>';
-                echo '<button type="button" class="expman-btn secondary expman-toggle-edit" data-id="' . esc_attr( $row_id ) . '">עריכה</button>';
-                echo '</td>';
-                echo '</tr>';
-
-                echo '<tr class="expman-inline-form expman-details" data-for="' . esc_attr( $row_id ) . '" style="display:none;">';
-                echo '<td colspan="9">';
-                echo '<div style="display:flex;gap:24px;flex-wrap:wrap;">';
-                echo '<div><strong>רשם הדומיין:</strong> ' . esc_html( $row['registrar'] ?? '' ) . '</div>';
-                echo '<div><strong>הערות:</strong> ' . esc_html( $row['notes'] ?? '' ) . '</div>';
-                echo '<div><strong>הערות זמניות:</strong> ' . esc_html( $row['temp_text'] ?? '' ) . '</div>';
-                echo '</div>';
-                echo '</td></tr>';
-
-                echo '<tr class="expman-inline-form expman-edit" data-for="' . esc_attr( $row_id ) . '" style="display:none;">';
-                echo '<td colspan="9">';
-                $this->render_form( $row_id, $row );
-                echo '</td></tr>';
-            }
-        }
-
+        echo '</thead><tbody data-expman-body>';
+        echo $this->render_rows_html( $rows, $mode );
         echo '</tbody></table>';
         echo '</form>';
 
         echo '<script>
         (function(){
-            function toggleRows(selector){
-                document.querySelectorAll(selector).forEach(function(btn){
+            const wrap = document.querySelector(".expman-domains-wrap");
+            if(!wrap){return;}
+
+            const addToggle = wrap.querySelector("[data-expman-new]");
+            const addForm = wrap.querySelector(".expman-domains-add");
+            if(addToggle && addForm){
+                addToggle.addEventListener("click", function(){
+                    addForm.style.display = (addForm.style.display === "none" || addForm.style.display === "") ? "block" : "none";
+                    if(addForm.style.display === "block"){
+                        addForm.scrollIntoView({behavior:"smooth", block:"start"});
+                    }
+                });
+            }
+
+            function wireRowClicks(scope){
+                scope.querySelectorAll("tr.expman-row").forEach(function(row){
+                    row.addEventListener("click", function(e){
+                        if(e.target.closest("button, a, input, select, textarea, label")){return;}
+                        var id = row.getAttribute("data-id");
+                        var detail = scope.querySelector("tr.expman-details[data-for=\'" + id + "\']");
+                        if(!detail){return;}
+                        detail.style.display = (detail.style.display === "none" || detail.style.display === "") ? "table-row" : "none";
+                    });
+                });
+            }
+
+            function wireEditButtons(scope){
+                scope.querySelectorAll(".expman-toggle-edit").forEach(function(btn){
                     btn.addEventListener("click", function(e){
                         e.preventDefault();
                         var id = btn.getAttribute("data-id");
-                        var row = document.querySelector("tr" + selector.replace(".expman-toggle-", ".expman-") + "[data-for=\'" + id + "\']");
+                        var row = scope.querySelector("tr.expman-edit[data-for=\'" + id + "\']");
                         if(!row){return;}
                         row.style.display = (row.style.display === "none" || row.style.display === "") ? "table-row" : "none";
                     });
                 });
             }
-            toggleRows(".expman-toggle-details");
-            toggleRows(".expman-toggle-edit");
+
+            function debounce(fn, delay){
+                let t;
+                return function(){
+                    const args = arguments;
+                    clearTimeout(t);
+                    t = setTimeout(function(){ fn.apply(null, args); }, delay);
+                };
+            }
+
+            const form = wrap.querySelector("form[data-expman-table]");
+            if(form){
+                const ajax = form.getAttribute("data-ajax");
+                const nonce = form.getAttribute("data-nonce");
+                const mode = form.getAttribute("data-mode");
+                const body = form.querySelector("[data-expman-body]");
+
+                const runFetch = function(){
+                    const data = new FormData(form);
+                    data.append("action", "expman_domains_fetch");
+                    data.append("nonce", nonce || "");
+                    data.append("mode", mode || "main");
+                    fetch(ajax, { method:"POST", body:data })
+                        .then(r=>r.json())
+                        .then(function(res){
+                            if(!res || !res.success){return;}
+                            body.innerHTML = res.data.html || "";
+                            wireRowClicks(body);
+                            wireEditButtons(body);
+                        })
+                        .catch(()=>{});
+                };
+
+                form.addEventListener("submit", function(e){
+                    e.preventDefault();
+                    runFetch();
+                });
+
+                const debounced = debounce(runFetch, 350);
+                form.querySelectorAll(".expman-filter-row input").forEach(function(input){
+                    input.addEventListener("input", debounced);
+                });
+                form.querySelectorAll(".expman-filter-row select").forEach(function(sel){
+                    sel.addEventListener("change", runFetch);
+                });
+                wrap.querySelectorAll(".expman-domains-filters input").forEach(function(input){
+                    input.addEventListener("input", debounced);
+                    input.addEventListener("change", runFetch);
+                });
+            }
+
+            wireRowClicks(wrap);
+            wireEditButtons(wrap);
         })();
         </script>';
 
         echo '</div>';
     }
 
-    public function render_bin() {
-        echo '<div class="notice notice-info"><p>סל מחזור לדומיינים יופיע כאן.</p></div>';
-    }
-
-    public function render_io() {
-        echo '<div class="notice notice-warning"><p>DRM Manager import/export is not configured.</p></div>';
-    }
-
     public function render_settings() {
         echo '<div class="notice notice-info"><p>מסך ההגדרות לדומיינים יהיה כאן.</p></div>';
-    }
-
-    public function render_assign() {
-        echo '<div class="notice notice-info"><p>טאב שיוך לקוח לדומיינים יופיע כאן.</p></div>';
     }
 
     private function render_form( $id = 0, $row = null ) {
@@ -346,7 +405,7 @@ class DRM_Manager {
         $this->ensure_customer_columns();
 
         $id = intval( $_POST['domain_id'] ?? 0 );
-        $expiry_date = sanitize_text_field( $_POST['expiry_date'] ?? '' );
+        $expiry_date = sanitize_text_field( wp_unslash( $_POST['expiry_date'] ?? '' ) );
         $days_left = null;
         if ( $expiry_date !== '' ) {
             try {
@@ -359,17 +418,17 @@ class DRM_Manager {
         }
 
         $data = array(
-            'client_name'     => sanitize_text_field( $_POST['client_name'] ?? '' ),
-            'customer_number' => sanitize_text_field( $_POST['customer_number'] ?? '' ),
-            'customer_name'   => sanitize_text_field( $_POST['customer_name'] ?? '' ),
-            'domain'          => sanitize_text_field( $_POST['domain'] ?? '' ),
+            'client_name'     => sanitize_text_field( wp_unslash( $_POST['client_name'] ?? '' ) ),
+            'customer_number' => sanitize_text_field( wp_unslash( $_POST['customer_number'] ?? '' ) ),
+            'customer_name'   => sanitize_text_field( wp_unslash( $_POST['customer_name'] ?? '' ) ),
+            'domain'          => sanitize_text_field( wp_unslash( $_POST['domain'] ?? '' ) ),
             'expiry_date'     => $expiry_date !== '' ? $expiry_date : null,
             'days_left'       => $days_left,
-            'registrar'       => sanitize_text_field( $_POST['registrar'] ?? '' ),
-            'ownership'       => sanitize_text_field( $_POST['ownership'] ?? '' ),
-            'payment'         => sanitize_text_field( $_POST['payment'] ?? '' ),
-            'notes'           => sanitize_textarea_field( $_POST['notes'] ?? '' ),
-            'temp_text'       => sanitize_textarea_field( $_POST['temp_text'] ?? '' ),
+            'registrar'       => sanitize_text_field( wp_unslash( $_POST['registrar'] ?? '' ) ),
+            'ownership'       => sanitize_text_field( wp_unslash( $_POST['ownership'] ?? '' ) ),
+            'payment'         => sanitize_text_field( wp_unslash( $_POST['payment'] ?? '' ) ),
+            'notes'           => sanitize_textarea_field( wp_unslash( $_POST['notes'] ?? '' ) ),
+            'temp_text'       => sanitize_textarea_field( wp_unslash( $_POST['temp_text'] ?? '' ) ),
         );
 
         if ( $id > 0 ) {
@@ -383,13 +442,25 @@ class DRM_Manager {
         exit;
     }
 
-    private function get_rows( array $filters, $orderby, $order ) {
+    private function get_rows( array $filters, $orderby, $order, $mode ) {
         $this->ensure_customer_columns();
         global $wpdb;
         $table = $wpdb->prefix . 'kb_kb_domain_expiry';
 
-        $where = array( 'deleted_at IS NULL' );
+        $where = array();
         $params = array();
+
+        if ( $mode === 'trash' ) {
+            $where[] = 'deleted_at IS NOT NULL';
+        } else {
+            $where[] = 'deleted_at IS NULL';
+        }
+
+        if ( $mode === 'main' ) {
+            $where[] = "( (customer_number IS NOT NULL AND customer_number <> '') OR (customer_name IS NOT NULL AND customer_name <> '') )";
+        } elseif ( $mode === 'map' ) {
+            $where[] = "( (customer_number IS NULL OR customer_number = '') AND (customer_name IS NULL OR customer_name = '') )";
+        }
 
         if ( $filters['client_name'] !== '' ) {
             $where[] = 'client_name LIKE %s';
@@ -423,18 +494,33 @@ class DRM_Manager {
             $where[] = 'payment = %s';
             $params[] = $filters['payment'];
         }
+        if ( $filters['registrar'] !== '' ) {
+            $where[] = 'registrar LIKE %s';
+            $params[] = '%' . $wpdb->esc_like( $filters['registrar'] ) . '%';
+        }
+        if ( $filters['expiry_from'] !== '' ) {
+            $where[] = 'expiry_date >= %s';
+            $params[] = $filters['expiry_from'];
+        }
+        if ( $filters['expiry_to'] !== '' ) {
+            $where[] = 'expiry_date <= %s';
+            $params[] = $filters['expiry_to'];
+        }
 
         if ( $orderby === 'days_left' ) {
             $order = 'ASC';
         }
 
         $order_clause = ( $orderby === 'days_left' ) ? 'days_left ASC' : "{$orderby} {$order}, days_left ASC";
-        $sql = "SELECT id, client_name, customer_number, customer_name, domain, expiry_date, days_left, registrar, ownership, payment, notes, temp_text FROM {$table} WHERE " . implode( ' AND ', $where ) . " ORDER BY {$order_clause}";
+        $sql = "SELECT id, client_name, customer_number, customer_name, domain, DATE(expiry_date) AS expiry_date, days_left, registrar, ownership, payment, notes, temp_text FROM {$table} WHERE " . implode( ' AND ', $where ) . " ORDER BY {$order_clause}";
         if ( ! empty( $params ) ) {
             $sql = $wpdb->prepare( $sql, $params );
         }
 
         $rows = $wpdb->get_results( $sql, ARRAY_A );
+        if ( ! empty( $wpdb->last_error ) ) {
+            error_log( 'Expman domains query error: ' . $wpdb->last_error );
+        }
         if ( empty( $rows ) ) {
             return array();
         }
@@ -453,6 +539,118 @@ class DRM_Manager {
         unset( $row );
 
         return $rows;
+    }
+
+    private function render_rows_html( array $rows, $mode ) {
+        if ( empty( $rows ) ) {
+            return '<tr><td colspan="9">אין נתונים.</td></tr>';
+        }
+
+        $html = '';
+        $row_index = 0;
+        foreach ( $rows as $row ) {
+            $row_index++;
+            $row_id = intval( $row['id'] ?? $row_index );
+            $days_left = $row['days_left'] ?? '';
+            $days_class = 'expman-days-unknown';
+            if ( $days_left !== '' ) {
+                $days_value = intval( $days_left );
+                if ( $days_value <= 7 ) {
+                    $days_class = 'expman-days-red';
+                } elseif ( $days_value <= 30 ) {
+                    $days_class = 'expman-days-yellow';
+                } else {
+                    $days_class = 'expman-days-green';
+                }
+            }
+
+            $row_class = $row_index % 2 === 0 ? 'expman-row-alt' : '';
+            $html .= '<tr class="expman-row ' . esc_attr( $row_class ) . '" data-id="' . esc_attr( $row_id ) . '">';
+            $html .= '<td>' . esc_html( $row['client_name'] ?? '' ) . '</td>';
+            $html .= '<td>' . esc_html( $row['customer_number'] ?? '' ) . '</td>';
+            $html .= '<td>' . esc_html( $row['customer_name'] ?? '' ) . '</td>';
+            $html .= '<td>' . esc_html( $row['domain'] ?? '' ) . '</td>';
+            $html .= '<td>' . esc_html( $row['expiry_date'] ?? '' ) . '</td>';
+            $html .= '<td class="' . esc_attr( $days_class ) . '">' . esc_html( $days_left ) . '</td>';
+            $html .= '<td>' . esc_html( $row['ownership'] ?? '' ) . '</td>';
+            $html .= '<td>' . esc_html( $row['payment'] ?? '' ) . '</td>';
+            $html .= '<td style="display:flex;gap:6px;flex-wrap:wrap;">';
+            $html .= '<button type="button" class="expman-btn secondary expman-toggle-edit" data-id="' . esc_attr( $row_id ) . '">' . ( $mode === 'map' ? 'שייך' : 'עריכה' ) . '</button>';
+            $html .= '</td>';
+            $html .= '</tr>';
+
+            $html .= '<tr class="expman-inline-form expman-details" data-for="' . esc_attr( $row_id ) . '" style="display:none;">';
+            $html .= '<td colspan="9">';
+            $html .= '<div style="display:flex;gap:24px;flex-wrap:wrap;">';
+            $html .= '<div><strong>רשם הדומיין:</strong> ' . esc_html( $row['registrar'] ?? '' ) . '</div>';
+            $html .= '<div><strong>הערות:</strong> ' . esc_html( $row['notes'] ?? '' ) . '</div>';
+            $html .= '<div><strong>הערות זמניות:</strong> ' . esc_html( $row['temp_text'] ?? '' ) . '</div>';
+            $html .= '</div>';
+            $html .= '</td></tr>';
+
+            $html .= '<tr class="expman-inline-form expman-edit" data-for="' . esc_attr( $row_id ) . '" style="display:none;">';
+            $html .= '<td colspan="9">';
+            ob_start();
+            $this->render_form( $row_id, $row );
+            $html .= ob_get_clean();
+            $html .= '</td></tr>';
+        }
+
+        return $html;
+    }
+
+    public function handle_fetch() {
+        if ( ! current_user_can( 'manage_options' ) ) {
+            wp_send_json_error( array( 'message' => 'Access denied.' ) );
+        }
+
+        $nonce = sanitize_text_field( wp_unslash( $_POST['nonce'] ?? '' ) );
+        if ( ! wp_verify_nonce( $nonce, 'expman_domains_fetch' ) ) {
+            wp_send_json_error( array( 'message' => 'Invalid nonce.' ) );
+        }
+
+        $allowed_sort = array(
+            'client_name',
+            'customer_number',
+            'customer_name',
+            'domain',
+            'expiry_date',
+            'days_left',
+            'ownership',
+            'payment',
+        );
+
+        $orderby = sanitize_key( wp_unslash( $_POST['orderby'] ?? 'days_left' ) );
+        if ( ! in_array( $orderby, $allowed_sort, true ) ) {
+            $orderby = 'days_left';
+        }
+        $order = strtoupper( sanitize_key( wp_unslash( $_POST['order'] ?? 'ASC' ) ) );
+        if ( ! in_array( $order, array( 'ASC', 'DESC' ), true ) ) {
+            $order = 'ASC';
+        }
+
+        $filters = array(
+            'client_name'     => sanitize_text_field( wp_unslash( $_POST['f_client_name'] ?? '' ) ),
+            'customer_number' => sanitize_text_field( wp_unslash( $_POST['f_customer_number'] ?? '' ) ),
+            'customer_name'   => sanitize_text_field( wp_unslash( $_POST['f_customer_name'] ?? '' ) ),
+            'domain'          => sanitize_text_field( wp_unslash( $_POST['f_domain'] ?? '' ) ),
+            'expiry_date'     => sanitize_text_field( wp_unslash( $_POST['f_expiry_date'] ?? '' ) ),
+            'days_left'       => sanitize_text_field( wp_unslash( $_POST['f_days_left'] ?? '' ) ),
+            'ownership'       => sanitize_text_field( wp_unslash( $_POST['f_ownership'] ?? '' ) ),
+            'payment'         => sanitize_text_field( wp_unslash( $_POST['f_payment'] ?? '' ) ),
+            'registrar'       => sanitize_text_field( wp_unslash( $_POST['f_registrar'] ?? '' ) ),
+            'expiry_from'     => sanitize_text_field( wp_unslash( $_POST['f_expiry_from'] ?? '' ) ),
+            'expiry_to'       => sanitize_text_field( wp_unslash( $_POST['f_expiry_to'] ?? '' ) ),
+        );
+
+        $mode = sanitize_key( wp_unslash( $_POST['mode'] ?? 'main' ) );
+        if ( ! in_array( $mode, array( 'main', 'trash', 'map' ), true ) ) {
+            $mode = 'main';
+        }
+
+        $rows = $this->get_rows( $filters, $orderby, $order, $mode );
+        $html = $this->render_rows_html( $rows, $mode );
+        wp_send_json_success( array( 'html' => $html ) );
     }
 }
 }
