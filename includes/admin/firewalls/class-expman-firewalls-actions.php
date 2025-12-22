@@ -914,6 +914,22 @@ class Expman_Firewalls_Actions {
         return is_array( $contacts ) ? $contacts : array();
     }
 
+    public function get_ui_settings() {
+        $settings = get_option( $this->option_key, array() );
+        $ui = $settings['firewalls_ui'] ?? array();
+        return is_array( $ui ) ? $ui : array();
+    }
+
+    public function action_save_ui_settings() {
+        $show_bulk = isset( $_POST['firewalls_show_bulk'] ) ? 1 : 0;
+        $settings = get_option( $this->option_key, array() );
+        $settings['firewalls_ui'] = array(
+            'show_bulk' => $show_bulk,
+        );
+        update_option( $this->option_key, $settings );
+        set_transient( 'expman_firewalls_errors', array( 'הגדרות תצוגה נשמרו.' ), 90 );
+    }
+
     private function assign_stage_row( $stage_id, $input, $batch_override = '' ) {
         global $wpdb;
         $stage_table = $wpdb->prefix . Expman_Firewalls_Page::TABLE_FIREWALL_IMPORT_STAGE;
