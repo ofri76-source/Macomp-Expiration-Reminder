@@ -193,7 +193,7 @@ class Expman_Firewalls_UI {
         $actions = $this->page->get_actions();
         $ui_settings = $actions->get_ui_settings();
         $show_bulk = ! isset( $ui_settings['show_bulk'] ) ? true : (bool) $ui_settings['show_bulk'];
-        $this->render_internal_tabs( $active );
+        $this->render_internal_tabs( $active, $show_bulk );
 
         echo '<div data-expman-panel="main"' . ( $active === 'main' ? '' : ' style="display:none;"' ) . '>';
         $this->render_main_tab();
@@ -242,11 +242,13 @@ class Expman_Firewalls_UI {
         return in_array( $tab, $allowed, true ) ? $tab : 'main';
     }
 
-    private function render_internal_tabs( $active, $show_bulk_tab ) {
+    private function render_internal_tabs( $active, $show_bulk = null ) {
         // JS tabs (no page reload)
-        $actions = $this->page->get_actions();
-        $ui_settings = $actions->get_ui_settings();
-        $show_bulk = ! isset( $ui_settings['show_bulk'] ) ? true : (bool) $ui_settings['show_bulk'];
+        if ( $show_bulk === null ) {
+            $actions = $this->page->get_actions();
+            $ui_settings = $actions->get_ui_settings();
+            $show_bulk = ! isset( $ui_settings['show_bulk'] ) ? true : (bool) $ui_settings['show_bulk'];
+        }
         $tabs = array(
             'main'     => 'רשימה ראשית',
             'assign'   => 'שיוך לאחר ייבוא',
