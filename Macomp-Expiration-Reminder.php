@@ -286,7 +286,21 @@ class Expiry_Manager_Plugin {
         $guard = $this->shortcode_guard();
         if ( $guard !== '' ) { return $guard; }
 
-        return $this->shortcode_generic( array( 'type' => 'domains', 'title' => 'דומיינים' ) );
+        if ( ! class_exists( 'DRM_Manager' ) ) {
+            return '<div>DRM_Manager missing</div>';
+        }
+
+        $drm = new DRM_Manager();
+        if ( method_exists( $drm, 'enqueue_front_assets' ) ) {
+            $drm->enqueue_front_assets();
+        }
+
+        $this->buffer_start();
+        if ( class_exists( 'Expman_Nav' ) ) {
+            Expman_Nav::render_public_nav( self::OPTION_KEY, self::VERSION );
+        }
+        $drm->render_admin();
+        return $this->buffer_end();
     }
 
     public function shortcode_servers() {
