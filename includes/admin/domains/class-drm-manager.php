@@ -34,9 +34,9 @@ class DRM_Manager {
             'is_paid',
         );
 
-        $orderby = sanitize_key( $_GET['orderby'] ?? 'customer_number' );
+        $orderby = sanitize_key( $_GET['orderby'] ?? 'days_to_expiry' );
         if ( ! in_array( $orderby, $allowed_sort, true ) ) {
-            $orderby = 'customer_number';
+            $orderby = 'days_to_expiry';
         }
 
         $order = strtoupper( sanitize_key( $_GET['order'] ?? 'ASC' ) );
@@ -54,7 +54,7 @@ class DRM_Manager {
             'is_paid'         => sanitize_text_field( $_GET['f_is_paid'] ?? '' ),
         );
 
-        $rows = array();
+        $rows = $this->get_rows( $filters, $orderby, $order );
 
         $base = remove_query_arg( array( 'orderby', 'order' ) );
         $clear_url = remove_query_arg(
@@ -91,6 +91,7 @@ class DRM_Manager {
 
         echo '<div class="expman-frontend expman-domains" style="direction:rtl;">';
         echo '<h2 style="margin-top:10px;">דומיינים</h2>';
+        $this->render_form();
 
         echo '<form method="get" action="">';
         echo '<input type="hidden" name="page" value="expman_domains">';
@@ -99,8 +100,8 @@ class DRM_Manager {
         echo '<table class="widefat striped">';
         echo '<thead><tr>';
 
-        $this->th_sort( 'customer_number', 'מספר לקוח', $orderby, $order, $base );
-        $this->th_sort( 'customer_name', 'שם לקוח', $orderby, $order, $base );
+        $this->th_sort( 'customer_number', 'מספר לקוח משוייך', $orderby, $order, $base );
+        $this->th_sort( 'customer_name', 'שם לקוח משוייך', $orderby, $order, $base );
         $this->th_sort( 'domain_name', 'שם הדומיין', $orderby, $order, $base );
         $this->th_sort( 'expiry_date', 'תאריך תפוגה', $orderby, $order, $base );
         $this->th_sort( 'days_to_expiry', 'ימים לתפוגה', $orderby, $order, $base );
@@ -163,7 +164,10 @@ class DRM_Manager {
                 echo '<td class="' . esc_attr( $days_class ) . '">' . esc_html( $days_to_expiry ) . '</td>';
                 echo '<td>' . esc_html( $row['is_managed'] ?? '' ) . '</td>';
                 echo '<td>' . esc_html( $row['is_paid'] ?? '' ) . '</td>';
-                echo '<td><button type="button" class="expman-btn secondary expman-toggle-details" data-id="' . esc_attr( $row_id ) . '">פרטים</button></td>';
+                echo '<td style="display:flex;gap:6px;flex-wrap:wrap;">';
+                echo '<button type="button" class="expman-btn secondary expman-toggle-details" data-id="' . esc_attr( $row_id ) . '">פרטים</button>';
+                echo '<button type="button" class="expman-btn secondary expman-toggle-edit" data-id="' . esc_attr( $row_id ) . '">עריכה</button>';
+                echo '</td>';
                 echo '</tr>';
 
                 echo '<tr class="expman-inline-form expman-details" data-for="' . esc_attr( $row_id ) . '" style="display:none;">';
@@ -174,6 +178,11 @@ class DRM_Manager {
                 echo '<div><strong>הערות זמניות:</strong> ' . esc_html( $row['temp_notes'] ?? '' ) . '</div>';
                 echo '</div>';
                 echo '</td></tr>';
+
+                echo '<tr class="expman-inline-form expman-edit" data-for="' . esc_attr( $row_id ) . '" style="display:none;">';
+                echo '<td colspan="8">';
+                $this->render_form( $row_id, $row );
+                echo '</td></tr>';
             }
         }
 
@@ -182,15 +191,19 @@ class DRM_Manager {
 
         echo '<script>
         (function(){
-            document.querySelectorAll(".expman-toggle-details").forEach(function(btn){
-                btn.addEventListener("click", function(e){
-                    e.preventDefault();
-                    var id = btn.getAttribute("data-id");
-                    var row = document.querySelector("tr.expman-details[data-for=\'" + id + "\']");
-                    if(!row){return;}
-                    row.style.display = (row.style.display === "none" || row.style.display === "") ? "table-row" : "none";
+            function toggleRows(selector){
+                document.querySelectorAll(selector).forEach(function(btn){
+                    btn.addEventListener("click", function(e){
+                        e.preventDefault();
+                        var id = btn.getAttribute("data-id");
+                        var row = document.querySelector("tr" + selector.replace(".expman-toggle-", ".expman-") + "[data-for=\'" + id + "\']");
+                        if(!row){return;}
+                        row.style.display = (row.style.display === "none" || row.style.display === "") ? "table-row" : "none";
+                    });
                 });
-            });
+            }
+            toggleRows(".expman-toggle-details");
+            toggleRows(".expman-toggle-edit");
         })();
         </script>';
 
@@ -213,11 +226,145 @@ class DRM_Manager {
         echo '<div class="notice notice-info"><p>טאב שיוך לקוח לדומיינים יופיע כאן.</p></div>';
     }
 
+    private function render_form( $id = 0, $row = null ) {
+        $data = array(
+            'customer_number' => '',
+            'customer_name'   => '',
+            'domain_name'     => '',
+            'expiry_date'     => '',
+            'days_to_expiry'  => '',
+            'is_managed'      => '',
+            'is_paid'         => '',
+            'registrar'       => '',
+            'notes'           => '',
+            'temp_notes'      => '',
+        );
+
+        if ( $row ) {
+            $data['customer_number'] = (string) ( $row['customer_number'] ?? '' );
+            $data['customer_name']   = (string) ( $row['customer_name'] ?? '' );
+            $data['domain_name']     = (string) ( $row['domain_name'] ?? '' );
+            $data['expiry_date']     = (string) ( $row['expiry_date'] ?? '' );
+            $data['days_to_expiry']  = (string) ( $row['days_to_expiry'] ?? '' );
+            $data['is_managed']      = (string) ( $row['is_managed'] ?? '' );
+            $data['is_paid']         = (string) ( $row['is_paid'] ?? '' );
+            $data['registrar']       = (string) ( $row['registrar'] ?? '' );
+            $data['notes']           = (string) ( $row['notes'] ?? '' );
+            $data['temp_notes']      = (string) ( $row['temp_notes'] ?? '' );
+        }
+
+        echo '<style>
+            .expman-domains-form{background:#fff;border:1px solid #e3e3e3;border-radius:12px;padding:14px;margin:12px 0}
+            .expman-domains-grid{display:grid;grid-template-columns:repeat(3,minmax(160px,1fr));gap:12px;align-items:end}
+            .expman-domains-grid .full{grid-column:span 3}
+            .expman-domains-grid label{display:block;font-size:12px;color:#333;margin-bottom:4px}
+            .expman-domains-grid input,.expman-domains-grid textarea,.expman-domains-grid select{width:100%;box-sizing:border-box}
+            .expman-domains-actions{display:flex;gap:10px;justify-content:flex-start;margin-top:12px}
+            @media (max-width: 900px){ .expman-domains-grid{grid-template-columns:repeat(1,minmax(160px,1fr));} .expman-domains-grid .full{grid-column:span 1} }
+        </style>';
+
+        echo '<form method="post" class="expman-domains-form" style="margin:0;">';
+        echo '<input type="hidden" name="action" value="expman_save_domain">';
+        echo '<input type="hidden" name="domain_id" value="' . esc_attr( $id ) . '">';
+
+        echo '<div class="expman-domains-grid">';
+        echo '<div><label>מספר לקוח משוייך</label><input type="text" name="customer_number" value="' . esc_attr( $data['customer_number'] ) . '"></div>';
+        echo '<div><label>שם לקוח משוייך</label><input type="text" name="customer_name" value="' . esc_attr( $data['customer_name'] ) . '"></div>';
+        echo '<div><label>שם הדומיין</label><input type="text" name="domain_name" value="' . esc_attr( $data['domain_name'] ) . '"></div>';
+        echo '<div><label>תאריך תפוגה</label><input type="date" name="expiry_date" value="' . esc_attr( $data['expiry_date'] ) . '"></div>';
+        echo '<div><label>ימים לתפוגה</label><input type="number" name="days_to_expiry" value="' . esc_attr( $data['days_to_expiry'] ) . '"></div>';
+        echo '<div><label>רשם הדומיין</label><input type="text" name="registrar" value="' . esc_attr( $data['registrar'] ) . '"></div>';
+        echo '<div><label>ניהול</label><select name="is_managed">';
+        echo '<option value="">בחר</option>';
+        echo '<option value="1" ' . selected( $data['is_managed'], '1', false ) . '>שלנו</option>';
+        echo '<option value="0" ' . selected( $data['is_managed'], '0', false ) . '>לא שלנו</option>';
+        echo '</select></div>';
+        echo '<div><label>תשלום</label><select name="is_paid">';
+        echo '<option value="">בחר</option>';
+        echo '<option value="1" ' . selected( $data['is_paid'], '1', false ) . '>שלנו</option>';
+        echo '<option value="0" ' . selected( $data['is_paid'], '0', false ) . '>לא שלנו</option>';
+        echo '</select></div>';
+        echo '<div><label>הערות</label><textarea name="notes" rows="2">' . esc_textarea( $data['notes'] ) . '</textarea></div>';
+        echo '<div><label>הערות זמניות</label><textarea name="temp_notes" rows="2">' . esc_textarea( $data['temp_notes'] ) . '</textarea></div>';
+        echo '</div>';
+
+        echo '<div class="expman-domains-actions">';
+        echo '<button type="submit" class="button button-primary">שמור</button>';
+        echo '</div>';
+        echo '</form>';
+    }
+
     private function th_sort( $key, $label, $orderby, $order, $base, $class = '' ) {
         $next_order = ( $orderby === $key && $order === 'ASC' ) ? 'DESC' : 'ASC';
         $url = add_query_arg( array( 'orderby' => $key, 'order' => $next_order ), $base );
         $class_attr = $class !== '' ? ' class="' . esc_attr( $class ) . '"' : '';
         echo '<th' . $class_attr . '><a href="' . esc_url( $url ) . '" style="text-decoration:none;">' . esc_html( $label ) . '</a></th>';
+    }
+
+    private function get_rows( array $filters, $orderby, $order ) {
+        global $wpdb;
+        $table = $wpdb->prefix . 'kb_kb_domain_expiry';
+
+        $where = array( '1=1' );
+        $params = array();
+
+        if ( $filters['customer_number'] !== '' ) {
+            $where[] = 'customer_number LIKE %s';
+            $params[] = '%' . $wpdb->esc_like( $filters['customer_number'] ) . '%';
+        }
+        if ( $filters['customer_name'] !== '' ) {
+            $where[] = 'customer_name LIKE %s';
+            $params[] = '%' . $wpdb->esc_like( $filters['customer_name'] ) . '%';
+        }
+        if ( $filters['domain_name'] !== '' ) {
+            $where[] = 'domain_name LIKE %s';
+            $params[] = '%' . $wpdb->esc_like( $filters['domain_name'] ) . '%';
+        }
+        if ( $filters['expiry_date'] !== '' ) {
+            $where[] = 'expiry_date LIKE %s';
+            $params[] = '%' . $wpdb->esc_like( $filters['expiry_date'] ) . '%';
+        }
+        if ( $filters['days_to_expiry'] !== '' ) {
+            $where[] = 'days_to_expiry LIKE %s';
+            $params[] = '%' . $wpdb->esc_like( $filters['days_to_expiry'] ) . '%';
+        }
+        if ( $filters['is_managed'] !== '' ) {
+            $where[] = 'is_managed = %d';
+            $params[] = (int) $filters['is_managed'];
+        }
+        if ( $filters['is_paid'] !== '' ) {
+            $where[] = 'is_paid = %d';
+            $params[] = (int) $filters['is_paid'];
+        }
+
+        if ( $orderby === 'days_to_expiry' ) {
+            $order = 'ASC';
+        }
+
+        $sql = "SELECT * FROM {$table} WHERE " . implode( ' AND ', $where ) . " ORDER BY {$orderby} {$order}, days_to_expiry ASC";
+        if ( ! empty( $params ) ) {
+            $sql = $wpdb->prepare( $sql, $params );
+        }
+
+        $rows = $wpdb->get_results( $sql, ARRAY_A );
+        if ( empty( $rows ) ) {
+            return array();
+        }
+
+        foreach ( $rows as &$row ) {
+            if ( empty( $row['days_to_expiry'] ) && ! empty( $row['expiry_date'] ) ) {
+                try {
+                    $today = new DateTimeImmutable( 'today' );
+                    $expiry = new DateTimeImmutable( $row['expiry_date'] );
+                    $row['days_to_expiry'] = (string) $today->diff( $expiry )->format( '%r%a' );
+                } catch ( Exception $e ) {
+                    $row['days_to_expiry'] = '';
+                }
+            }
+        }
+        unset( $row );
+
+        return $rows;
     }
 }
 }
