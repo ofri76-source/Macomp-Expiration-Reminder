@@ -187,15 +187,20 @@ class Expman_Firewalls_UI {
         }
 
         $active = $this->get_active_tab();
-        $this->render_internal_tabs( $active );
+        $actions = $this->page->get_actions();
+        $ui_settings = $actions->get_ui_settings();
+        $show_bulk = ! isset( $ui_settings['show_bulk'] ) ? true : (bool) $ui_settings['show_bulk'];
+        $this->render_internal_tabs( $active, $show_bulk );
 
         echo '<div data-expman-panel="main"' . ( $active === 'main' ? '' : ' style="display:none;"' ) . '>';
         $this->render_main_tab();
         echo '</div>';
 
-        echo '<div data-expman-panel="bulk"' . ( $active === 'bulk' ? '' : ' style="display:none;"' ) . '>';
-        $this->render_bulk_tab();
-        echo '</div>';
+        if ( $show_bulk ) {
+            echo '<div data-expman-panel="bulk"' . ( $active === 'bulk' ? '' : ' style="display:none;"' ) . '>';
+            $this->render_bulk_tab();
+            echo '</div>';
+        }
 
         echo '<div data-expman-panel="assign"' . ( $active === 'assign' ? '' : ' style="display:none;"' ) . '>';
         $this->render_assign_tab();
@@ -223,22 +228,43 @@ class Expman_Firewalls_UI {
     }
 
     private function get_active_tab() {
-        $allowed = array( 'main', 'bulk', 'assign', 'settings', 'trash', 'logs', 'archive' );
+        $actions = $this->page->get_actions();
+        $ui_settings = $actions->get_ui_settings();
+        $show_bulk = ! isset( $ui_settings['show_bulk'] ) ? true : (bool) $ui_settings['show_bulk'];
+        $allowed = array( 'main', 'assign', 'settings', 'trash', 'logs', 'archive' );
+        if ( $show_bulk ) {
+            $allowed[] = 'bulk';
+        }
         $tab = sanitize_key( $_REQUEST['tab'] ?? 'main' );
         return in_array( $tab, $allowed, true ) ? $tab : 'main';
     }
 
-    private function render_internal_tabs( $active ) {
+    private function render_internal_tabs( $active, $show_bulk = null ) {
         // JS tabs (no page reload)
+        if ( $show_bulk === null ) {
+            $actions = $this->page->get_actions();
+            $ui_settings = $actions->get_ui_settings();
+            $show_bulk = ! isset( $ui_settings['show_bulk'] ) ? true : (bool) $ui_settings['show_bulk'];
+        }
         $tabs = array(
             'main'     => 'רשימה ראשית',
-            'bulk'     => 'עריכה קבוצתית',
             'assign'   => 'שיוך לאחר ייבוא',
             'settings' => 'הגדרות',
             'logs'     => 'לוגים',
             'trash'    => 'סל מחזור',
             'archive'  => 'ארכיון',
         );
+        if ( $show_bulk ) {
+            $tabs = array(
+                'main'     => 'רשימה ראשית',
+                'bulk'     => 'עריכה קבוצתית',
+                'assign'   => 'שיוך לאחר ייבוא',
+                'settings' => 'הגדרות',
+                'logs'     => 'לוגים',
+                'trash'    => 'סל מחזור',
+                'archive'  => 'ארכיון',
+            );
+        }
 
         echo '<style>
         .expman-internal-tabs{display:flex;gap:10px;flex-wrap:wrap;justify-content:flex-end;margin:10px 0;padding:8px;border-radius:10px;background:#f4f7fb;border:1px solid #d9e3f2;}
@@ -258,7 +284,11 @@ class Expman_Firewalls_UI {
           const dataEl = document.currentScript.previousElementSibling;
           function show(k){
             document.querySelectorAll("[data-expman-panel]").forEach(p=>{p.style.display=(p.getAttribute("data-expman-panel")==k)?"block":"none";});
-            document.querySelectorAll(".expman-tab-btn").forEach(a=>{a.style.opacity=(a.getAttribute("data-expman-tab")==k)?"1":"0.85";});
+            document.querySelectorAll(".expman-tab-btn").forEach(a=>{
+              const active = a.getAttribute("data-expman-tab")===k;
+              a.style.opacity = active ? "1" : "0.85";
+              a.setAttribute("data-active", active ? "1" : "0");
+            });
             const url=new URL(window.location.href);
             url.searchParams.set("tab",k);
             history.replaceState(null,"",url.toString());
@@ -747,6 +777,20 @@ class Expman_Firewalls_UI {
         $actions = $this->page->get_actions();
         $types = $actions->get_box_types();
         $vendor_contacts = $actions->get_vendor_contacts();
+        $ui_settings = $actions->get_ui_settings();
+        $show_bulk = ! isset( $ui_settings['show_bulk'] ) ? true : (bool) $ui_settings['show_bulk'];
+
+        echo '<hr style="margin:24px 0;">';
+        echo '<h3>הגדרות תצוגה</h3>';
+        echo '<form method="post" style="max-width:680px;">';
+        wp_nonce_field( 'expman_firewalls' );
+        echo '<input type="hidden" name="expman_action" value="save_firewalls_ui_settings">';
+        echo '<input type="hidden" name="tab" value="settings">';
+        echo '<label style="display:block;margin:10px 0;">';
+        echo '<input type="checkbox" name="firewalls_show_bulk" value="1" ' . checked( $show_bulk, true, false ) . '> הצג לשונית עריכה קבוצתית';
+        echo '</label>';
+        echo '<p><button type="submit" class="button button-primary">שמירה</button></p>';
+        echo '</form>';
 
         echo '<hr style="margin:24px 0;">';
         echo '<h3>פרטי ספק</h3>';
@@ -775,6 +819,8 @@ class Expman_Firewalls_UI {
 
         echo '<hr style="margin:24px 0;">';
         echo '<h3>טבלת יצרן ודגם</h3>';
+        echo '<button type="button" class="button" id="expman-toggle-box-types">ערוך יצרן / דגם</button>';
+        echo '<div id="expman-box-types-wrap" style="display:none;margin-top:12px;">';
         echo '<form method="post" style="max-width:680px;">';
         wp_nonce_field( 'expman_firewalls' );
         echo '<input type="hidden" name="expman_action" value="save_box_types">';
@@ -802,6 +848,8 @@ class Expman_Firewalls_UI {
         echo '</tbody></table>';
         echo '<p style="margin-top:10px;"><button type="submit" class="button button-primary">שמירה</button></p>';
         echo '</form>';
+        echo '</div>';
+        echo '<script>(function(){var btn=document.getElementById("expman-toggle-box-types");var wrap=document.getElementById("expman-box-types-wrap");if(btn&&wrap){btn.addEventListener("click",function(){wrap.style.display=wrap.style.display==="none"?"block":"none";});}})();</script>';
     }
 
     private function render_trash_tab() {
@@ -904,97 +952,7 @@ class Expman_Firewalls_UI {
             echo '<form method="get" class="expman-filter-form" style="margin:0 0 10px 0;">';
         }
 
-        $vendor_opts = $actions->get_distinct_type_values( 'vendor' );
-        $model_opts  = $actions->get_distinct_type_values( 'model' );
-        $vendor_sel  = array_filter( array_map( 'trim', explode( ',', (string) ( $filters['vendor'] ?? '' ) ) ) );
-        $model_sel   = array_filter( array_map( 'trim', explode( ',', (string) ( $filters['model'] ?? '' ) ) ) );
-
-        $ms_script = '';
         if ( $show_filters ) {
-            echo '<div id="expman-ms-data-' . esc_attr( $uid ) . '" style="display:none"'
-                . ' data-vendor-options="' . esc_attr( wp_json_encode( $vendor_opts ) ) . '"'
-                . ' data-model-options="'  . esc_attr( wp_json_encode( $model_opts ) )  . '"'
-                . ' data-vendor-selected="' . esc_attr( wp_json_encode( array_values( $vendor_sel ) ) ) . '"'
-                . ' data-model-selected="'  . esc_attr( wp_json_encode( array_values( $model_sel ) ) )  . '"'
-                . '></div>';
-
-            $ms_script = '<script>
-            (function(){
-              const dataEl = document.getElementById("expman-ms-data-' . esc_js( $uid ) . '");
-              if(!dataEl){return;}
-              const wrap = dataEl.closest(".expman-table-wrap");
-              function get(key){try{return JSON.parse(dataEl.dataset[key]||"[]")}catch(e){return []}}
-              const optsVendor=get("vendorOptions"), optsModel=get("modelOptions");
-              const selVendor=new Set(get("vendorSelected")), selModel=new Set(get("modelSelected"));
-
-              function build(th, key, options, selected){
-                if(th.dataset.expmanMsBuilt){return;}
-                th.dataset.expmanMsBuilt="1";
-                const hidden=document.createElement("input");
-                hidden.type="hidden"; hidden.name = key==="vendor" ? "f_vendor" : "f_model";
-                hidden.value=Array.from(selected).join(",");
-
-                const btn=document.createElement("button");
-                btn.type="button";
-                btn.className="expman-btn secondary";
-                btn.style.width="100%"; btn.style.height="32px";
-                btn.textContent = selected.size ? ("נבחרו " + selected.size) : "בחר...";
-
-                const panel=document.createElement("div");
-                panel.className="expman-ms-panel";
-                panel.style.position="absolute"; panel.style.zIndex="9999";
-                panel.style.background="#fff"; panel.style.border="1px solid #ccc";
-                panel.style.borderRadius="10px"; panel.style.padding="10px";
-                panel.style.minWidth="240px"; panel.style.maxHeight="260px";
-                panel.style.overflow="auto"; panel.style.display="none";
-
-                const search=document.createElement("input");
-                search.type="text"; search.placeholder="חיפוש...";
-                search.style.width="100%"; search.style.marginBottom="8px";
-
-                const list=document.createElement("div");
-                function render(q){
-                  list.innerHTML="";
-                  const qq=(q||"").toLowerCase();
-                  options.filter(v=>!qq||String(v).toLowerCase().includes(qq)).forEach(v=>{
-                    const label=document.createElement("label");
-                    label.style.display="flex"; label.style.gap="8px"; label.style.alignItems="center";
-                    label.style.margin="4px 0";
-                    const cb=document.createElement("input");
-                    cb.type="checkbox"; cb.checked=selected.has(v);
-                    cb.addEventListener("change",()=>{cb.checked?selected.add(v):selected.delete(v);});
-                    const span=document.createElement("span"); span.textContent=String(v); span.style.color="#1f3b64";
-                    label.appendChild(cb); label.appendChild(span);
-                    list.appendChild(label);
-                  });
-                }
-                search.addEventListener("input",()=>render(search.value));
-                render("");
-                const actions=document.createElement("div");
-                actions.style.display="flex"; actions.style.gap="8px"; actions.style.marginTop="10px";
-
-                const clear=document.createElement("button");
-                clear.type="button"; clear.className="expman-btn expman-btn-clear"; clear.textContent="נקה";
-                clear.addEventListener("click",()=>{selected.clear(); render(search.value);});
-
-                actions.appendChild(clear);
-                panel.appendChild(search); panel.appendChild(list); panel.appendChild(actions);
-
-                th.style.position="relative";
-                th.appendChild(hidden); th.appendChild(btn); th.appendChild(panel);
-
-                btn.addEventListener("click",()=>{ panel.style.display = panel.style.display==="none"?"block":"none"; });
-                document.addEventListener("click",(e)=>{ if(!th.contains(e.target)) panel.style.display="none"; });
-
-                th.closest("form").addEventListener("submit",()=>{ hidden.value=Array.from(selected).join(","); });
-              }
-
-              if(!wrap){return;}
-              wrap.querySelectorAll("th.expman-ms-wrap[data-ms=vendor]").forEach(th=>build(th,"vendor",optsVendor,selVendor));
-              wrap.querySelectorAll("th.expman-ms-wrap[data-ms=model]").forEach(th=>build(th,"model",optsModel,selModel));
-            })();
-            </script>';
-
             foreach ( $hidden_filters as $name => $value ) {
                 echo '<input type="hidden" name="' . esc_attr( $name ) . '" value="' . esc_attr( $value ) . '">';
             }
@@ -1032,8 +990,8 @@ class Expman_Firewalls_UI {
             echo '<th><input style="width:100%" name="f_branch" value="' . esc_attr( $filters['branch'] ) . '" placeholder="סינון..."></th>';
             echo '<th class="expman-align-left expman-serial-col"><input style="width:100%" name="f_serial_number" value="' . esc_attr( $filters['serial_number'] ) . '" placeholder="סינון..."></th>';
             echo '<th></th>'; // days_to_renew
-            echo '<th class="expman-ms-wrap expman-align-left" data-ms="vendor" style="text-align:left;"></th>';
-            echo '<th class="expman-ms-wrap expman-align-left" data-ms="model" style="text-align:left;"></th>';
+            echo '<th class="expman-align-left"><input style="width:100%" name="f_vendor" value="' . esc_attr( $filters['vendor'] ) . '" placeholder="סינון..."></th>';
+            echo '<th class="expman-align-left"><input style="width:100%" name="f_model" value="' . esc_attr( $filters['model'] ) . '" placeholder="סינון..."></th>';
             if ( $show_status_cols && $show_status_filters ) {
                 echo '<th><select name="f_is_managed" style="width:100%;">';
                 echo '<option value="">הכל</option>';
@@ -1052,7 +1010,7 @@ class Expman_Firewalls_UI {
             echo '<th></th>'; // access
             echo '<th style="white-space:nowrap;">';
             if ( $clear_url ) {
-                echo '<a class="expman-btn secondary" style="display:inline-block;text-decoration:none;" href="' . esc_url( $clear_url ) . '">נקה</a>';
+                echo '<a class="expman-btn" style="display:inline-block;text-decoration:none;" href="' . esc_url( $clear_url ) . '">נקה</a>';
             }
             echo '</th>';
             echo '</tr>';
@@ -1215,9 +1173,6 @@ class Expman_Firewalls_UI {
         echo '</tbody></table>';
         if ( $show_filters ) {
             echo '</form>';
-        }
-        if ( $ms_script !== '' ) {
-            echo $ms_script;
         }
         echo '</div>';
 

@@ -115,14 +115,26 @@ class Expman_Nav {
         .expman-top-nav li{margin:0;}
         .expman-top-nav a.expman-nav-btn{display:flex;justify-content:center;align-items:center;width:100%;padding:10px 12px;border:1px solid #9fb3d9;border-radius:20px;text-decoration:none;font-weight:700;background:#2f5ea8;color:#fff;transition:background .15s ease,border-color .15s ease,transform .15s ease}
         .expman-top-nav a.expman-nav-btn:hover{background:#264f8f;border-color:#264f8f;transform:translateY(-1px)}
+        .expman-top-nav a.expman-nav-btn.is-active{background:#cfe3ff;color:#1f3b64;border-color:#9fb3d9;}
         .expman-top-nav a.expman-nav-btn.is-disabled{pointer-events:none;opacity:.5;background:#c9d3e6;color:#42536b;border-color:#b9c5d8}
         </style>';
+
+        $current_url = home_url( add_query_arg( array(), $_SERVER['REQUEST_URI'] ?? '' ) );
+        $current_path = untrailingslashit( (string) wp_parse_url( $current_url, PHP_URL_PATH ) );
 
         echo '<nav class="expman-top-nav" aria-label="Expiry Manager Navigation"><ul>';
         foreach ( $items as $key => $label ) {
             $url = $urls[ $key ] ?? '';
             $cls = 'expman-nav-btn';
-            if ( empty( $url ) ) { $cls .= ' is-disabled'; $url = '#'; }
+            if ( empty( $url ) ) {
+                $cls .= ' is-disabled';
+                $url = '#';
+            } else {
+                $url_path = untrailingslashit( (string) wp_parse_url( $url, PHP_URL_PATH ) );
+                if ( $url_path !== '' && $url_path === $current_path ) {
+                    $cls .= ' is-active';
+                }
+            }
             echo '<li><a class="' . esc_attr( $cls ) . '" href="' . esc_url( $url ) . '">' . esc_html( $label ) . '</a></li>';
         }
         echo '</ul></nav>';
@@ -148,12 +160,15 @@ class Expman_Nav {
         .expman-admin-nav ul{list-style:none;margin:0;padding:0;display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end;}
         .expman-admin-nav a{display:inline-block;padding:6px 10px;border-radius:10px;border:1px solid #9fb3d9;text-decoration:none;font-weight:700;background:#2f5ea8;color:#fff;}
         .expman-admin-nav a:hover{background:#264f8f;border-color:#264f8f;}
+        .expman-admin-nav a.is-active{background:#cfe3ff;color:#1f3b64;border-color:#9fb3d9;}
         </style>';
 
         echo '<nav class="expman-admin-nav" aria-label="Expiry Manager Admin Navigation"><ul>';
+        $current_page = sanitize_key( $_GET['page'] ?? '' );
         foreach ( $items as $slug => $label ) {
             $url = admin_url( 'admin.php?page=' . $slug );
-            echo '<li><a href="' . esc_url( $url ) . '">' . esc_html( $label ) . '</a></li>';
+            $cls = $slug === $current_page ? 'is-active' : '';
+            echo '<li><a class="' . esc_attr( $cls ) . '" href="' . esc_url( $url ) . '">' . esc_html( $label ) . '</a></li>';
         }
         echo '</ul></nav>';
     }

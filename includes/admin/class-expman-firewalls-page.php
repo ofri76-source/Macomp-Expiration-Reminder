@@ -207,6 +207,10 @@ class Expman_Firewalls_Page {
                 $this->action_save_vendor_contacts();
                 $redirect_tab = 'settings';
                 break;
+            case 'save_firewalls_ui_settings':
+                $this->actions->action_save_ui_settings();
+                $redirect_tab = 'settings';
+                break;
         }
 
         $redirect_url = remove_query_arg( array( 'expman_msg' ) );
