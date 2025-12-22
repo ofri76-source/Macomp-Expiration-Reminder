@@ -187,15 +187,20 @@ class Expman_Firewalls_UI {
         }
 
         $active = $this->get_active_tab();
+        $actions = $this->page->get_actions();
+        $ui_settings = $actions->get_ui_settings();
+        $show_bulk = ! isset( $ui_settings['show_bulk'] ) ? true : (bool) $ui_settings['show_bulk'];
         $this->render_internal_tabs( $active );
 
         echo '<div data-expman-panel="main"' . ( $active === 'main' ? '' : ' style="display:none;"' ) . '>';
         $this->render_main_tab();
         echo '</div>';
 
-        echo '<div data-expman-panel="bulk"' . ( $active === 'bulk' ? '' : ' style="display:none;"' ) . '>';
-        $this->render_bulk_tab();
-        echo '</div>';
+        if ( $show_bulk ) {
+            echo '<div data-expman-panel="bulk"' . ( $active === 'bulk' ? '' : ' style="display:none;"' ) . '>';
+            $this->render_bulk_tab();
+            echo '</div>';
+        }
 
         echo '<div data-expman-panel="assign"' . ( $active === 'assign' ? '' : ' style="display:none;"' ) . '>';
         $this->render_assign_tab();
@@ -223,22 +228,41 @@ class Expman_Firewalls_UI {
     }
 
     private function get_active_tab() {
-        $allowed = array( 'main', 'bulk', 'assign', 'settings', 'trash', 'logs', 'archive' );
+        $actions = $this->page->get_actions();
+        $ui_settings = $actions->get_ui_settings();
+        $show_bulk = ! isset( $ui_settings['show_bulk'] ) ? true : (bool) $ui_settings['show_bulk'];
+        $allowed = array( 'main', 'assign', 'settings', 'trash', 'logs', 'archive' );
+        if ( $show_bulk ) {
+            $allowed[] = 'bulk';
+        }
         $tab = sanitize_key( $_REQUEST['tab'] ?? 'main' );
         return in_array( $tab, $allowed, true ) ? $tab : 'main';
     }
 
     private function render_internal_tabs( $active ) {
         // JS tabs (no page reload)
+        $actions = $this->page->get_actions();
+        $ui_settings = $actions->get_ui_settings();
+        $show_bulk = ! isset( $ui_settings['show_bulk'] ) ? true : (bool) $ui_settings['show_bulk'];
         $tabs = array(
             'main'     => 'רשימה ראשית',
-            'bulk'     => 'עריכה קבוצתית',
             'assign'   => 'שיוך לאחר ייבוא',
             'settings' => 'הגדרות',
             'logs'     => 'לוגים',
             'trash'    => 'סל מחזור',
             'archive'  => 'ארכיון',
         );
+        if ( $show_bulk ) {
+            $tabs = array(
+                'main'     => 'רשימה ראשית',
+                'bulk'     => 'עריכה קבוצתית',
+                'assign'   => 'שיוך לאחר ייבוא',
+                'settings' => 'הגדרות',
+                'logs'     => 'לוגים',
+                'trash'    => 'סל מחזור',
+                'archive'  => 'ארכיון',
+            );
+        }
 
         echo '<style>
         .expman-internal-tabs{display:flex;gap:10px;flex-wrap:wrap;justify-content:flex-end;margin:10px 0;padding:8px;border-radius:10px;background:#f4f7fb;border:1px solid #d9e3f2;}
@@ -258,7 +282,11 @@ class Expman_Firewalls_UI {
           const dataEl = document.currentScript.previousElementSibling;
           function show(k){
             document.querySelectorAll("[data-expman-panel]").forEach(p=>{p.style.display=(p.getAttribute("data-expman-panel")==k)?"block":"none";});
-            document.querySelectorAll(".expman-tab-btn").forEach(a=>{a.style.opacity=(a.getAttribute("data-expman-tab")==k)?"1":"0.85";});
+            document.querySelectorAll(".expman-tab-btn").forEach(a=>{
+              const active = a.getAttribute("data-expman-tab")===k;
+              a.style.opacity = active ? "1" : "0.85";
+              a.setAttribute("data-active", active ? "1" : "0");
+            });
             const url=new URL(window.location.href);
             url.searchParams.set("tab",k);
             history.replaceState(null,"",url.toString());
@@ -747,6 +775,20 @@ class Expman_Firewalls_UI {
         $actions = $this->page->get_actions();
         $types = $actions->get_box_types();
         $vendor_contacts = $actions->get_vendor_contacts();
+        $ui_settings = $actions->get_ui_settings();
+        $show_bulk = ! isset( $ui_settings['show_bulk'] ) ? true : (bool) $ui_settings['show_bulk'];
+
+        echo '<hr style="margin:24px 0;">';
+        echo '<h3>הגדרות תצוגה</h3>';
+        echo '<form method="post" style="max-width:680px;">';
+        wp_nonce_field( 'expman_firewalls' );
+        echo '<input type="hidden" name="expman_action" value="save_firewalls_ui_settings">';
+        echo '<input type="hidden" name="tab" value="settings">';
+        echo '<label style="display:block;margin:10px 0;">';
+        echo '<input type="checkbox" name="firewalls_show_bulk" value="1" ' . checked( $show_bulk, true, false ) . '> הצג לשונית עריכה קבוצתית';
+        echo '</label>';
+        echo '<p><button type="submit" class="button button-primary">שמירה</button></p>';
+        echo '</form>';
 
         echo '<hr style="margin:24px 0;">';
         echo '<h3>פרטי ספק</h3>';
@@ -775,6 +817,8 @@ class Expman_Firewalls_UI {
 
         echo '<hr style="margin:24px 0;">';
         echo '<h3>טבלת יצרן ודגם</h3>';
+        echo '<button type="button" class="button" id="expman-toggle-box-types">ערוך יצרן / דגם</button>';
+        echo '<div id="expman-box-types-wrap" style="display:none;margin-top:12px;">';
         echo '<form method="post" style="max-width:680px;">';
         wp_nonce_field( 'expman_firewalls' );
         echo '<input type="hidden" name="expman_action" value="save_box_types">';
@@ -802,6 +846,8 @@ class Expman_Firewalls_UI {
         echo '</tbody></table>';
         echo '<p style="margin-top:10px;"><button type="submit" class="button button-primary">שמירה</button></p>';
         echo '</form>';
+        echo '</div>';
+        echo '<script>(function(){var btn=document.getElementById("expman-toggle-box-types");var wrap=document.getElementById("expman-box-types-wrap");if(btn&&wrap){btn.addEventListener("click",function(){wrap.style.display=wrap.style.display==="none"?"block":"none";});}})();</script>';
     }
 
     private function render_trash_tab() {
