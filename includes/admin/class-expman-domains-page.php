@@ -14,13 +14,13 @@ class Expman_Domains_Page {
             Expman_Nav::render_admin_nav();
         }
 
-        $tab = isset( $_GET['tab'] ) ? sanitize_key( $_GET['tab'] ) : 'domains';
+        $tab = isset( $_GET['tab'] ) ? sanitize_key( $_GET['tab'] ) : 'main';
 
         $tabs = array(
-            'domains'  => 'ניהול דומיינים',
-            'bin'      => 'סל מחזור',
-            'io'       => 'ייבוא/ייצוא',
+            'main'     => 'טבלה ראשית',
             'settings' => 'הגדרות',
+            'assign'   => 'שיוך לקוח',
+            'bin'      => 'סל מחזור',
         );
 
         echo '<div class="wrap">';
@@ -39,13 +39,13 @@ class Expman_Domains_Page {
             case 'bin':
                 $this->drm->render_bin();
                 break;
-            case 'io':
-                $this->drm->render_io();
-                break;
             case 'settings':
                 $this->drm->render_settings();
                 break;
-            case 'domains':
+            case 'assign':
+                $this->drm->render_assign();
+                break;
+            case 'main':
             default:
                 $this->drm->render_admin();
                 break;
