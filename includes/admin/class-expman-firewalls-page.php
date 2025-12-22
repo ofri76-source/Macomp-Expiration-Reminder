@@ -72,12 +72,6 @@ class Expman_Firewalls_Page {
     }
 
     public static function render_public_page( $option_key, $version = '' ) {
-        // Internal site, but still require login (per earlier requirement)
-        if ( ! is_user_logged_in() ) {
-            echo '<div class="notice notice-error"><p>אין הרשאה. יש להתחבר.</p></div>';
-            return;
-        }
-
         self::install_if_missing();
         $self = new self( (string) $option_key, (string) $version );
         $self->schema->ensure_schema();
@@ -205,6 +199,10 @@ class Expman_Firewalls_Page {
                 break;
             case 'save_vendor_contacts':
                 $this->action_save_vendor_contacts();
+                $redirect_tab = 'settings';
+                break;
+            case 'save_firewalls_ui_settings':
+                $this->actions->action_save_ui_settings();
                 $redirect_tab = 'settings';
                 break;
         }
