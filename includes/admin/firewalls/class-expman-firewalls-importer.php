@@ -459,30 +459,26 @@ class Expman_Firewalls_Importer {
         return $fallback;
     }
 
-    private function normalize_import_date( $value ) {
+        private function normalize_import_date( $value ) {
         $value = trim( (string) $value );
         if ( $value === '' ) {
             return null;
         }
-        if ( preg_match( '/^\d{2}\/\d{2}\/\d{4}$/', $value ) ) {
-            $dt = DateTime::createFromFormat( 'd/m/Y', $value );
-            if ( $dt ) {
+
+        // Accept dd/mm/yy as well as dd/mm/yyyy and common variants.
+        $formats = array( 'd/m/Y', 'd/m/y', 'd.m.Y', 'd.m.y', 'd-m-Y', 'd-m-y', 'Y-m-d', 'Y/m/d' );
+        foreach ( $formats as $fmt ) {
+            $dt = DateTime::createFromFormat( $fmt, $value );
+            if ( $dt instanceof DateTime ) {
                 return $dt->format( 'Y-m-d' );
             }
         }
-        if ( preg_match( '/^\d{2}\.\d{2}\.\d{4}$/', $value ) ) {
-            $dt = DateTime::createFromFormat( 'd.m.Y', $value );
-            if ( $dt ) {
-                return $dt->format( 'Y-m-d' );
-            }
-        }
-        if ( preg_match( '/^\d{4}-\d{2}-\d{2}$/', $value ) ) {
-            return $value;
-        }
+
         $ts = strtotime( $value );
         if ( $ts ) {
-            return date( 'Y-m-d', $ts );
+            return gmdate( 'Y-m-d', $ts );
         }
+
         return null;
     }
 
