@@ -37,7 +37,7 @@ class Expman_Firewalls_Logger {
         }
         if ( $type === 'date' ) {
             $value = trim( (string) $value );
-            return $value !== '' ? date_i18n( 'd/m/y', strtotime( $value ) ) : '';
+            return $value !== '' ? date_i18n( 'd/m/Y', strtotime( $value ) ) : '';
         }
 
         return (string) $value;
