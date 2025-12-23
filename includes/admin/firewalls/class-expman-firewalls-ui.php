@@ -610,7 +610,17 @@ class Expman_Firewalls_UI {
             echo '<option value="1" ' . selected( $row->track_only, 1, false ) . '>כן</option>';
             echo '</select></td>';
             echo '<td><input type="text" name="model" value="' . esc_attr( $row->model ?? '' ) . '" form="expman-stage-' . esc_attr( $row->id ) . '"></td>';
-            echo '<td><input type="date" name="expiry_date" value="' . esc_attr( $row->expiry_date ?? '' ) . '" form="expman-stage-' . esc_attr( $row->id ) . '"></td>';
+            $stage_expiry_ui = '';
+            if ( ! empty( $row->expiry_date ) ) {
+                $dt = DateTime::createFromFormat( 'Y-m-d', (string) $row->expiry_date );
+                if ( $dt instanceof DateTime ) {
+                    $stage_expiry_ui = $dt->format( 'd/m/Y' );
+                } else {
+                    $ts = strtotime( (string) $row->expiry_date );
+                    $stage_expiry_ui = $ts ? date_i18n( 'd/m/Y', $ts ) : (string) $row->expiry_date;
+                }
+            }
+            echo '<td><input type="text" name="expiry_date" value="' . esc_attr( $stage_expiry_ui ) . '" form="expman-stage-' . esc_attr( $row->id ) . '" placeholder="dd/mm/yyyy" inputmode="numeric" pattern="\\d{2}\\/\\d{2}\\/\\d{4}"></td>';
             echo '<td><input type="text" name="access_url" value="' . esc_attr( $row->access_url ?? '' ) . '" form="expman-stage-' . esc_attr( $row->id ) . '"></td>';
             echo '<td><textarea name="notes" rows="2" form="expman-stage-' . esc_attr( $row->id ) . '">' . esc_textarea( $row->notes ?? '' ) . '</textarea></td>';
             echo '<td>';
@@ -927,7 +937,7 @@ class Expman_Firewalls_UI {
             $context = $logger->format_log_context( $log->context ?? '' );
             $created_at = '';
             if ( ! empty( $log->created_at ) ) {
-                $created_at = date_i18n( 'd/m/y H:i', strtotime( $log->created_at ) );
+                $created_at = date_i18n( 'd/m/Y H:i', strtotime( $log->created_at ) );
             }
             echo '<tr>';
             echo '<td>' . esc_html( $created_at ) . '</td>';
@@ -1176,7 +1186,7 @@ class Expman_Firewalls_UI {
             echo '<td colspan="' . esc_attr( $column_count ) . '">';
             $created_label = '';
             if ( ! empty( $r->created_at ) ) {
-                $created_label = date_i18n( 'd/m/y', strtotime( $r->created_at ) );
+                $created_label = date_i18n( 'd/m/Y', strtotime( $r->created_at ) );
             }
             $contact_button = '';
             if ( ! empty( $vendor_contacts ) ) {
@@ -1196,7 +1206,7 @@ class Expman_Firewalls_UI {
             echo '<div style="display:flex;gap:20px;flex-wrap:wrap;">';
             echo '<div style="min-width:260px;"><strong>הערה קבועה:</strong><div style="white-space:pre-wrap;">' . esc_html( (string) $r->notes ) . '</div></div>';
             echo '<div style="min-width:260px;"><strong>הודעה זמנית:</strong><div style="white-space:pre-wrap;">' . esc_html( intval( $r->temp_notice_enabled ) ? (string) $r->temp_notice : '' ) . '</div></div>';
-            echo '<div style="min-width:180px;"><strong>תאריך לחידוש:</strong> ' . esc_html( ( ! empty( $r->expiry_date ) ? date_i18n( 'd/m/y', strtotime( $r->expiry_date ) ) : '' ) ) . '</div>';
+            echo '<div style="min-width:180px;"><strong>תאריך לחידוש:</strong> ' . esc_html( ( ! empty( $r->expiry_date ) ? date_i18n( 'd/m/Y', strtotime( $r->expiry_date ) ) : '' ) ) . '</div>';
             echo '<div style="min-width:200px;"><strong>תאריך רישום:</strong> ' . esc_html( $created_label ) . '</div>';
             echo '<div style="min-width:200px;"><strong>URL:</strong> ' . $access_btn . '</div>';
             if ( $contact_button !== '' ) {
@@ -1334,7 +1344,17 @@ class Expman_Firewalls_UI {
         echo '<div class="span2"><label>סניף</label><input type="text" name="branch" value="' . esc_attr( $row['branch'] ) . '"></div>';
 
         echo '<div class="span2"><label>מספר סידורי</label><input type="text" name="serial_number" value="' . esc_attr( $row['serial_number'] ) . '" required></div>';
-        echo '<div class="span2"><label>תאריך תפוגה</label><input type="date" name="expiry_date" value="' . esc_attr( $row['expiry_date'] ) . '"></div>';
+        $expiry_ui = '';
+        if ( ! empty( $row['expiry_date'] ) ) {
+            $dt = DateTime::createFromFormat( 'Y-m-d', (string) $row['expiry_date'] );
+            if ( $dt instanceof DateTime ) {
+                $expiry_ui = $dt->format( 'd/m/Y' );
+            } else {
+                $ts = strtotime( (string) $row['expiry_date'] );
+                $expiry_ui = $ts ? date_i18n( 'd/m/Y', $ts ) : (string) $row['expiry_date'];
+            }
+        }
+        echo '<div class="span2"><label>תאריך תפוגה</label><input type="text" name="expiry_date" value="' . esc_attr( $expiry_ui ) . '" placeholder="dd/mm/yyyy" inputmode="numeric" pattern="\\d{2}\\/\\d{2}\\/\\d{4}"></div>';
 
         echo '<div class="span2"><label>ניהול</label><select name="is_managed"><option value="1" ' . selected( $row['is_managed'], 1, false ) . '>שלנו</option><option value="0" ' . selected( $row['is_managed'], 0, false ) . '>לא שלנו</option></select></div>';
 
