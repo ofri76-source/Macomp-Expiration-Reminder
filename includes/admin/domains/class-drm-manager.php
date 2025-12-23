@@ -4,6 +4,41 @@ if ( ! defined( 'ABSPATH' ) ) { exit; }
 if ( ! class_exists( 'DRM_Manager' ) ) {
 class DRM_Manager {
 
+    private function normalize_ui_date_to_db( $value ) {
+        $value = trim( (string) $value );
+        if ( $value === '' ) { return ''; }
+
+        // UI format: dd/mm/yyyy. Accept common variants and DB format.
+        $formats = array( 'd/m/Y', 'd-m-Y', 'd.m.Y', 'Y-m-d', 'Y/m/d', 'Y-m-d H:i:s' );
+        foreach ( $formats as $fmt ) {
+            $dt = DateTime::createFromFormat( $fmt, $value );
+            if ( $dt instanceof DateTime ) {
+                return $dt->format( 'Y-m-d' );
+            }
+        }
+
+        return '';
+    }
+
+    private function format_db_date_to_ui( $value ) {
+        $value = trim( (string) $value );
+        if ( $value === '' ) { return ''; }
+
+        $dt = DateTime::createFromFormat( 'Y-m-d', $value );
+        if ( $dt instanceof DateTime ) {
+            return $dt->format( 'd/m/Y' );
+        }
+
+        $dt = DateTime::createFromFormat( 'Y-m-d H:i:s', $value );
+        if ( $dt instanceof DateTime ) {
+            return $dt->format( 'd/m/Y' );
+        }
+
+        $ts = strtotime( $value );
+        if ( ! $ts ) { return $value; }
+        return date_i18n( 'd/m/Y', $ts );
+    }
+
     public function __construct() {
         add_action( 'admin_enqueue_scripts', array( $this, 'admin_assets' ) );
         add_action( 'admin_post_expman_save_domain', array( $this, 'handle_save' ) );
@@ -139,8 +174,10 @@ class DRM_Manager {
 
         echo '<div class="expman-domains-filters" style="margin:10px 0;display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;">';
         echo '<div><label>רשם הדומיין</label><input type="text" name="f_registrar" form="expman-domains-filter-form" value="' . esc_attr( $filters['registrar'] ) . '"></div>';
-        echo '<div><label>תאריך תפוגה מ-</label><input type="date" name="f_expiry_from" form="expman-domains-filter-form" value="' . esc_attr( $filters['expiry_from'] ) . '"></div>';
-        echo '<div><label>תאריך תפוגה עד</label><input type="date" name="f_expiry_to" form="expman-domains-filter-form" value="' . esc_attr( $filters['expiry_to'] ) . '"></div>';
+        $expiry_from_ui = $this->format_db_date_to_ui( $filters['expiry_from'] );
+        $expiry_to_ui   = $this->format_db_date_to_ui( $filters['expiry_to'] );
+        echo '<div><label>תאריך תפוגה מ-</label><input type="text" name="f_expiry_from" form="expman-domains-filter-form" value="' . esc_attr( $expiry_from_ui ) . '" placeholder="dd/mm/yyyy" inputmode="numeric" pattern="\\d{2}\\/\\d{2}\\/\\d{4}"></div>';
+        echo '<div><label>תאריך תפוגה עד</label><input type="text" name="f_expiry_to" form="expman-domains-filter-form" value="' . esc_attr( $expiry_to_ui ) . '" placeholder="dd/mm/yyyy" inputmode="numeric" pattern="\\d{2}\\/\\d{2}\\/\\d{4}"></div>';
         echo '</div>';
 
         $ajax_url = esc_url( admin_url( 'admin-ajax.php' ) );
@@ -170,7 +207,8 @@ class DRM_Manager {
         echo '<th><input style="width:100%" name="f_customer_number" value="' . esc_attr( $filters['customer_number'] ) . '" placeholder="סינון..."></th>';
         echo '<th><input style="width:100%" name="f_customer_name" value="' . esc_attr( $filters['customer_name'] ) . '" placeholder="סינון..."></th>';
         echo '<th><input style="width:100%" name="f_domain" value="' . esc_attr( $filters['domain'] ) . '" placeholder="סינון..."></th>';
-        echo '<th><input style="width:100%" name="f_expiry_date" value="' . esc_attr( $filters['expiry_date'] ) . '" placeholder="YYYY-MM-DD"></th>';
+        $expiry_exact_ui = $this->format_db_date_to_ui( $filters['expiry_date'] );
+        echo '<th><input style="width:100%" name="f_expiry_date" value="' . esc_attr( $expiry_exact_ui ) . '" placeholder="dd/mm/yyyy"></th>';
         echo '<th><input style="width:100%" name="f_days_left" value="' . esc_attr( $filters['days_left'] ) . '" placeholder="ימים..."></th>';
         echo '<th><select name="f_ownership" style="width:100%;">';
         echo '<option value="">הכל</option>';
@@ -345,7 +383,8 @@ class DRM_Manager {
         echo '<div><label>מספר לקוח חדש</label><input type="text" name="customer_number" value="' . esc_attr( $data['customer_number'] ) . '"></div>';
         echo '<div><label>שם לקוח חדש</label><input type="text" name="customer_name" value="' . esc_attr( $data['customer_name'] ) . '"></div>';
         echo '<div><label>שם הדומיין</label><input type="text" name="domain" value="' . esc_attr( $data['domain'] ) . '"></div>';
-        echo '<div><label>תאריך תפוגה</label><input type="date" name="expiry_date" value="' . esc_attr( $data['expiry_date'] ) . '"></div>';
+        $expiry_ui = $this->format_db_date_to_ui( $data['expiry_date'] );
+        echo '<div><label>תאריך תפוגה</label><input type="text" name="expiry_date" value="' . esc_attr( $expiry_ui ) . '" placeholder="dd/mm/yyyy" inputmode="numeric" pattern="\\d{2}\\/\\d{2}\\/\\d{4}"></div>';
         echo '<div><label>ימים לתפוגה</label><input type="number" name="days_left" value="' . esc_attr( $data['days_left'] ) . '"></div>';
         echo '<div><label>רשם הדומיין</label><input type="text" name="registrar" value="' . esc_attr( $data['registrar'] ) . '"></div>';
         echo '<div><label>ניהול</label><select name="ownership">';
@@ -405,7 +444,8 @@ class DRM_Manager {
         $this->ensure_customer_columns();
 
         $id = intval( $_POST['domain_id'] ?? 0 );
-        $expiry_date = sanitize_text_field( wp_unslash( $_POST['expiry_date'] ?? '' ) );
+        $expiry_input = sanitize_text_field( wp_unslash( $_POST['expiry_date'] ?? '' ) );
+        $expiry_date = $this->normalize_ui_date_to_db( $expiry_input );
         $days_left = null;
         if ( $expiry_date !== '' ) {
             try {
@@ -479,8 +519,14 @@ class DRM_Manager {
             $params[] = '%' . $wpdb->esc_like( $filters['domain'] ) . '%';
         }
         if ( $filters['expiry_date'] !== '' ) {
+            $needle = (string) $filters['expiry_date'];
+            // If user provided dd/mm/yyyy, convert to DB format for matching.
+            $parsed = $this->normalize_ui_date_to_db( $needle );
+            if ( $parsed !== '' ) {
+                $needle = $parsed;
+            }
             $where[] = 'expiry_date LIKE %s';
-            $params[] = '%' . $wpdb->esc_like( $filters['expiry_date'] ) . '%';
+            $params[] = '%' . $wpdb->esc_like( $needle ) . '%';
         }
         if ( $filters['days_left'] !== '' ) {
             $where[] = 'days_left LIKE %s';
@@ -499,12 +545,18 @@ class DRM_Manager {
             $params[] = '%' . $wpdb->esc_like( $filters['registrar'] ) . '%';
         }
         if ( $filters['expiry_from'] !== '' ) {
-            $where[] = 'expiry_date >= %s';
-            $params[] = $filters['expiry_from'];
+            $from_db = $this->normalize_ui_date_to_db( (string) $filters['expiry_from'] );
+            if ( $from_db !== '' ) {
+                $where[] = 'expiry_date >= %s';
+                $params[] = $from_db;
+            }
         }
         if ( $filters['expiry_to'] !== '' ) {
-            $where[] = 'expiry_date <= %s';
-            $params[] = $filters['expiry_to'];
+            $to_db = $this->normalize_ui_date_to_db( (string) $filters['expiry_to'] );
+            if ( $to_db !== '' ) {
+                $where[] = 'expiry_date <= %s';
+                $params[] = $to_db;
+            }
         }
 
         if ( $orderby === 'days_left' ) {
@@ -570,7 +622,8 @@ class DRM_Manager {
             $html .= '<td>' . esc_html( $row['customer_number'] ?? '' ) . '</td>';
             $html .= '<td>' . esc_html( $row['customer_name'] ?? '' ) . '</td>';
             $html .= '<td>' . esc_html( $row['domain'] ?? '' ) . '</td>';
-            $html .= '<td>' . esc_html( $row['expiry_date'] ?? '' ) . '</td>';
+            $exp_ui = $this->format_db_date_to_ui( $row['expiry_date'] ?? '' );
+            $html .= '<td>' . esc_html( $exp_ui ) . '</td>';
             $html .= '<td class="' . esc_attr( $days_class ) . '">' . esc_html( $days_left ) . '</td>';
             $html .= '<td>' . esc_html( $row['ownership'] ?? '' ) . '</td>';
             $html .= '<td>' . esc_html( $row['payment'] ?? '' ) . '</td>';
