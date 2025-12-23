@@ -190,22 +190,31 @@ class Expiry_Manager_Plugin {
         }
 
         $settings = get_option( self::OPTION_KEY, array() );
-        $table = $settings['customers_table'] ?? '';
-        $table = preg_replace( '/[^a-zA-Z0-9_]/', '', (string) $table );
+        $raw_table = preg_replace( '/[^a-zA-Z0-9_]/', '', (string) ( $settings['customers_table'] ?? '' ) );
+        $candidates = array();
+        if ( $raw_table !== '' ) {
+            $candidates[] = $raw_table;
+            if ( strpos( $raw_table, $wpdb->prefix ) !== 0 ) {
+                $candidates[] = $wpdb->prefix . $raw_table;
+            }
+        }
+        $candidates[] = $wpdb->prefix . 'dc_customers';
+
+        $table = '';
+        foreach ( $candidates as $candidate ) {
+            $exists = $wpdb->get_var( $wpdb->prepare( "SHOW TABLES LIKE %s", $candidate ) );
+            if ( $exists === $candidate ) {
+                $table = $candidate;
+                break;
+            }
+        }
         if ( $table === '' ) {
-            $table = $wpdb->prefix . 'dc_customers';
-        } elseif ( strpos( $table, $wpdb->prefix ) !== 0 ) {
-            $table = $wpdb->prefix . $table;
+            wp_send_json( array( 'items' => array() ) );
         }
         $like  = '%' . $wpdb->esc_like( $q ) . '%';
 
         $has_is_deleted = $wpdb->get_var( $wpdb->prepare( "SHOW COLUMNS FROM {$table} LIKE %s", 'is_deleted' ) );
         $deleted_clause = $has_is_deleted ? 'is_deleted=0 AND ' : '';
-
-        $table_exists = $wpdb->get_var( $wpdb->prepare( "SHOW TABLES LIKE %s", $table ) );
-        if ( $table_exists !== $table ) {
-            wp_send_json( array( 'items' => array() ) );
-        }
 
         $rows = $wpdb->get_results(
             $wpdb->prepare(

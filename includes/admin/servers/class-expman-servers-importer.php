@@ -55,9 +55,9 @@ class Expman_Servers_Importer {
             }
 
             $col = array_pad( $data, 5, '' );
-            $service_tag = trim( (string) $this->get_value( $data, $header_map, array( 'service_tag', 'service tag', 'tag', 'Service Tag' ), $col[0] ) );
-            $customer_number = trim( (string) $this->get_value( $data, $header_map, array( 'customer_number', 'customer number', 'מספר לקוח' ), $col[1] ) );
-            $customer_name = trim( (string) $this->get_value( $data, $header_map, array( 'customer_name', 'customer name', 'שם לקוח' ), $col[2] ) );
+            $customer_number = trim( (string) $this->get_value( $data, $header_map, array( 'customer_number', 'customer number', 'מספר לקוח' ), $col[0] ) );
+            $customer_name = trim( (string) $this->get_value( $data, $header_map, array( 'customer_name', 'customer name', 'שם לקוח' ), $col[1] ) );
+            $service_tag = trim( (string) $this->get_value( $data, $header_map, array( 'service_tag', 'service tag', 'tag', 'Service Tag' ), $col[2] ) );
             $last_renewal = trim( (string) $this->get_value( $data, $header_map, array( 'last_renewal_date', 'last renewal date', 'תאריך חידוש אחרון', 'תאריך חידוש' ), $col[3] ) );
             $notes = trim( (string) $this->get_value( $data, $header_map, array( 'notes', 'note', 'הערות' ), $col[4] ) );
 
@@ -166,7 +166,7 @@ class Expman_Servers_Importer {
         $value = is_string( $value ) ? trim( $value ) : '';
         if ( $value === '' ) { return null; }
 
-        $formats = array( 'd/m/Y', 'd-m-Y', 'd.m.Y', 'Y-m-d', 'Y/m/d', 'Y-m-d H:i:s' );
+        $formats = array( 'd/m/Y', 'd/m/y', 'd-m-Y', 'd-m-y', 'd.m.Y', 'd.m.y', 'Y-m-d', 'Y/m/d', 'Y-m-d H:i:s' );
         foreach ( $formats as $fmt ) {
             $dt = DateTime::createFromFormat( $fmt, $value );
             if ( $dt instanceof DateTime ) {
@@ -192,6 +192,11 @@ class Expman_Servers_Importer {
             if ( $dt instanceof DateTime ) {
                 return $dt->format( 'Y-m-d' );
             }
+        }
+
+        $ts = strtotime( $value );
+        if ( $ts ) {
+            return gmdate( 'Y-m-d', $ts );
         }
 
         return null;

@@ -42,7 +42,7 @@ class Expman_Servers_Actions {
         $value = is_string( $value ) ? trim( $value ) : '';
         if ( $value === '' ) { return null; }
 
-        $formats = array( 'd/m/Y', 'd-m-Y', 'd.m.Y', 'Y-m-d', 'Y/m/d', 'Y-m-d H:i:s' );
+        $formats = array( 'd/m/Y', 'd/m/y', 'd-m-Y', 'd-m-y', 'd.m.Y', 'd.m.y', 'Y-m-d', 'Y/m/d', 'Y-m-d H:i:s' );
         foreach ( $formats as $fmt ) {
             $dt = DateTime::createFromFormat( $fmt, $value );
             if ( $dt instanceof DateTime ) {
@@ -70,11 +70,9 @@ class Expman_Servers_Actions {
             }
         }
 
-        if ( preg_match( '/^\\d{4}-\\d{2}-\\d{2}$/', $value ) ) {
-            $ts = strtotime( $value . ' 00:00:00' );
-            if ( $ts ) {
-                return gmdate( 'Y-m-d', $ts );
-            }
+        $ts = strtotime( $value );
+        if ( $ts ) {
+            return gmdate( 'Y-m-d', $ts );
         }
 
         return null;
