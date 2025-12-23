@@ -84,7 +84,7 @@ class Expman_Generic_Items_Page {
             $exp_disp = '';
             if ( ! empty( $item->expiry_date ) ) {
                 $ts = strtotime( (string) $item->expiry_date );
-                $exp_disp = $ts ? date_i18n( 'd/m/y', $ts ) : (string) $item->expiry_date;
+                $exp_disp = $ts ? date_i18n( 'd/m/Y', $ts ) : (string) $item->expiry_date;
             }
             echo '<td>' . esc_html( $exp_disp ) . '</td>';
             echo '<td>' . esc_html( $item->ip_address ) . '</td>';
@@ -126,7 +126,17 @@ class Expman_Generic_Items_Page {
         echo '<tr><th><label for="customer_id">Customer ID</label></th><td><input type="number" name="customer_id" id="customer_id" value="' . esc_attr( $item['customer_id'] ) . '" class="regular-text"></td></tr>';
         echo '<tr><th><label for="name">Name</label></th><td><input type="text" name="name" id="name" value="' . esc_attr( $item['name'] ) . '" class="regular-text" required></td></tr>';
         echo '<tr><th><label for="identifier">Identifier</label></th><td><input type="text" name="identifier" id="identifier" value="' . esc_attr( $item['identifier'] ) . '" class="regular-text"></td></tr>';
-        echo '<tr><th><label for="expiry_date">Expiry Date</label></th><td><input type="date" name="expiry_date" id="expiry_date" value="' . esc_attr( $item['expiry_date'] ) . '"></td></tr>';
+        $expiry_ui = '';
+        if ( ! empty( $item['expiry_date'] ) ) {
+            $dt = DateTime::createFromFormat( 'Y-m-d', (string) $item['expiry_date'] );
+            if ( $dt instanceof DateTime ) {
+                $expiry_ui = $dt->format( 'd/m/Y' );
+            } else {
+                $ts = strtotime( (string) $item['expiry_date'] );
+                $expiry_ui = $ts ? date_i18n( 'd/m/Y', $ts ) : (string) $item['expiry_date'];
+            }
+        }
+        echo '<tr><th><label for="expiry_date">Expiry Date</label></th><td><input type="text" name="expiry_date" id="expiry_date" value="' . esc_attr( $expiry_ui ) . '" placeholder="dd/mm/yyyy" inputmode="numeric" pattern="\\d{2}\\/\\d{2}\\/\\d{4}"></td></tr>';
         echo '<tr><th><label for="ip_address">IP Address</label></th><td><input type="text" name="ip_address" id="ip_address" value="' . esc_attr( $item['ip_address'] ) . '" class="regular-text"></td></tr>';
         echo '<tr><th><label for="notes">Notes</label></th><td><textarea name="notes" id="notes" rows="4" class="large-text">' . esc_textarea( $item['notes'] ) . '</textarea></td></tr>';
         echo '</table>';
@@ -142,12 +152,25 @@ class Expman_Generic_Items_Page {
         $table = $wpdb->prefix . 'exp_items';
 
         $id = intval( $_POST['id'] ?? 0 );
+        $normalize_date = function( $value ) {
+            $value = is_string( $value ) ? trim( $value ) : '';
+            if ( $value === '' ) { return null; }
+            $formats = array( 'd/m/Y', 'd-m-Y', 'd.m.Y', 'Y-m-d', 'Y/m/d', 'Y-m-d H:i:s' );
+            foreach ( $formats as $fmt ) {
+                $dt = DateTime::createFromFormat( $fmt, $value );
+                if ( $dt instanceof DateTime ) {
+                    return $dt->format( 'Y-m-d' );
+                }
+            }
+            return null;
+        };
+
         $data = array(
             'type'        => $this->type,
             'customer_id' => isset( $_POST['customer_id'] ) ? intval( $_POST['customer_id'] ) : null,
             'name'        => sanitize_text_field( $_POST['name'] ?? '' ),
             'identifier'  => sanitize_text_field( $_POST['identifier'] ?? '' ),
-            'expiry_date' => sanitize_text_field( $_POST['expiry_date'] ?? '' ),
+            'expiry_date' => $normalize_date( sanitize_text_field( $_POST['expiry_date'] ?? '' ) ),
             'ip_address'  => sanitize_text_field( $_POST['ip_address'] ?? '' ),
             'notes'       => wp_kses_post( $_POST['notes'] ?? '' ),
             'updated_at'  => current_time( 'mysql' ),
