@@ -48,8 +48,36 @@ class Expman_Servers_Dell {
         $api_key = sanitize_text_field( $_POST['dell_api_key'] ?? '' );
         $red_days = intval( $_POST['dell_red_days'] ?? 30 );
         $yellow_days = intval( $_POST['dell_yellow_days'] ?? 60 );
-        $contact_name  = sanitize_text_field( $_POST['dell_contact_name'] ?? '' );
-        $contact_email = sanitize_email( $_POST['dell_contact_email'] ?? '' );
+        $contact_names  = isset( $_POST['dell_contact_name'] ) ? (array) $_POST['dell_contact_name'] : array();
+        $contact_emails = isset( $_POST['dell_contact_email'] ) ? (array) $_POST['dell_contact_email'] : array();
+        $contacts = array();
+        $max = max( count( $contact_names ), count( $contact_emails ) );
+        for ( $i = 0; $i < $max; $i++ ) {
+            $name  = sanitize_text_field( wp_unslash( $contact_names[ $i ] ?? '' ) );
+            $email = sanitize_email( wp_unslash( $contact_emails[ $i ] ?? '' ) );
+            if ( $name === '' && $email === '' ) { continue; }
+            $contacts[] = array( 'name' => $name, 'email' => $email );
+        }
+
+        // Backward-compat: support saving single contact (if UI not updated for some reason)
+        if ( empty( $contacts ) ) {
+            $raw_name  = $_POST['dell_contact_name'] ?? '';
+            $raw_email = $_POST['dell_contact_email'] ?? '';
+            if ( is_array( $raw_name ) ) {
+                $raw_name = $raw_name[0] ?? '';
+            }
+            if ( is_array( $raw_email ) ) {
+                $raw_email = $raw_email[0] ?? '';
+            }
+            $single_name  = sanitize_text_field( wp_unslash( $raw_name ) );
+            $single_email = sanitize_email( wp_unslash( $raw_email ) );
+            if ( $single_name !== '' || $single_email !== '' ) {
+                $contacts[] = array( 'name' => $single_name, 'email' => $single_email );
+            }
+        }
+
+        $contact_name  = (string) ( $contacts[0]['name'] ?? '' );
+        $contact_email = (string) ( $contacts[0]['email'] ?? '' );
 
         $prev = $this->get_settings();
         $settings = $prev;
@@ -58,6 +86,8 @@ class Expman_Servers_Dell {
         $settings['api_key'] = $api_key;
         $settings['red_days'] = $red_days;
         $settings['yellow_days'] = $yellow_days;
+        $settings['contacts'] = $contacts;
+        // Keep single fields for older code paths
         $settings['contact_name'] = $contact_name;
         $settings['contact_email'] = $contact_email;
 
