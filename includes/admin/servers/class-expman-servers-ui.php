@@ -384,10 +384,11 @@ class Expman_Servers_UI {
       b.textContent = (it.customer_number||"") + " - " + (it.customer_name||"");
       b.addEventListener("click", ()=>{
         input.value = b.textContent;
-        const idField = form.querySelector("input[name=\"customer_id\"]");
+        const formId = form.getAttribute("id") || "";
+        const idField = form.querySelector("input[name=\"customer_id\"]") || (formId ? document.querySelector('input[name="customer_id"][form="'+formId+'"]') : null);
         if(idField) idField.value = it.id || "";
-        const num = form.querySelector("input[name=\"customer_number\"]");
-        const name= form.querySelector("input[name=\"customer_name\"]");
+        const num = form.querySelector("input[name=\"customer_number\"]") || (formId ? document.querySelector('input[name="customer_number"][form="'+formId+'"]') : null);
+        const name= form.querySelector("input[name=\"customer_name\"]") || (formId ? document.querySelector('input[name="customer_name"][form="'+formId+'"]') : null);
         if(num) num.value = it.customer_number || "";
         if(name) name.value = it.customer_name || "";
         results.innerHTML = "";
@@ -953,35 +954,39 @@ JS;
         .expman-assign-form{display:flex;gap:8px;align-items:center;flex-wrap:nowrap;}
         .expman-assign-form input[type="text"]{height:28px;}
         .expman-assign-form .expman-customer-search{min-width:220px;}
-        .expman-assign-form input[readonly]{background:#f3f5f8;}
+        .expman-assign-field{width:100%;box-sizing:border-box;height:28px;}
+        .expman-assign-field[readonly]{background:#f3f5f8;}
         @media (max-width: 900px){ .expman-assign-form{flex-wrap:wrap;} }
         </style>';
 
         echo '<table class="widefat">';
-        echo '<thead><tr><th>Service Tag</th><th>מספר לקוח</th><th>שם לקוח</th><th>הערות</th><th>שיוך</th><th>מחיקה</th></tr></thead><tbody>';
+        echo '<thead><tr><th>חיפוש לקוח</th><th>מספר לקוח</th><th>שם לקוח</th><th>Service Tag</th><th>תאריך חידוש</th><th>הערות</th><th class="expman-align-left">פעולות</th></tr></thead><tbody>';
         foreach ( (array) $rows as $row ) {
+            $form_id = 'expman-assign-' . intval( $row->id );
+            $last_renewal_ui = self::fmt_date_short( $row->last_renewal_date );
             echo '<tr>';
-            echo '<td>' . esc_html( $row->service_tag ) . '</td>';
-            echo '<td>' . esc_html( $row->customer_number ) . '</td>';
-            echo '<td>' . esc_html( $row->customer_name ) . '</td>';
-            echo '<td>' . esc_html( $row->notes ) . '</td>';
             echo '<td>';
-            echo '<form method="post" class="expman-assign-form">';
+            echo '<form method="post" id="' . esc_attr( $form_id ) . '" class="expman-assign-form">';
             wp_nonce_field( 'expman_assign_servers_stage', 'expman_assign_servers_stage_nonce' );
             echo '<input type="hidden" name="expman_action" value="assign_import_stage">';
             echo '<input type="hidden" name="tab" value="assign">';
             echo '<input type="hidden" name="stage_id" value="' . esc_attr( $row->id ) . '">';
             echo '<input type="hidden" name="service_tag" value="' . esc_attr( $row->service_tag ) . '">';
+            echo '<input type="hidden" name="last_renewal_date" value="' . esc_attr( $row->last_renewal_date ) . '">';
+            echo '<input type="hidden" name="notes" value="' . esc_attr( $row->notes ) . '">';
             echo '<input type="hidden" name="customer_id" value="">';
             echo '<input type="text" class="expman-customer-search" placeholder="חפש לקוח..." autocomplete="off">';
             echo '<div class="expman-customer-results" style="position:relative;"></div>';
-            echo '<input type="text" name="customer_number" value="' . esc_attr( $row->customer_number ) . '" readonly placeholder="מספר לקוח" style="width:120px;">';
-            echo '<input type="text" name="customer_name" value="' . esc_attr( $row->customer_name ) . '" readonly placeholder="שם לקוח" style="width:180px;">';
-            echo '<button type="submit" class="button">שיוך</button>';
             echo '</form>';
             echo '</td>';
-            echo '<td>';
-            echo '<form method="post" onsubmit="return confirm(\'למחוק את השורה?\');">';
+            echo '<td><input type="text" class="expman-assign-field" name="customer_number" form="' . esc_attr( $form_id ) . '" value="' . esc_attr( $row->customer_number ) . '" readonly></td>';
+            echo '<td><input type="text" class="expman-assign-field" name="customer_name" form="' . esc_attr( $form_id ) . '" value="' . esc_attr( $row->customer_name ) . '" readonly></td>';
+            echo '<td><input type="text" class="expman-assign-field" form="' . esc_attr( $form_id ) . '" value="' . esc_attr( $row->service_tag ) . '" readonly></td>';
+            echo '<td><input type="text" class="expman-assign-field" form="' . esc_attr( $form_id ) . '" value="' . esc_attr( $last_renewal_ui ) . '" readonly></td>';
+            echo '<td><input type="text" class="expman-assign-field" form="' . esc_attr( $form_id ) . '" value="' . esc_attr( $row->notes ) . '" readonly></td>';
+            echo '<td class="expman-align-left" style="white-space:nowrap;">';
+            echo '<button type="submit" class="button" form="' . esc_attr( $form_id ) . '">שיוך</button> ';
+            echo '<form method="post" style="display:inline;" onsubmit="return confirm(\'למחוק את השורה?\');">';
             wp_nonce_field( 'expman_delete_servers_stage', 'expman_delete_servers_stage_nonce' );
             echo '<input type="hidden" name="expman_action" value="delete_import_stage">';
             echo '<input type="hidden" name="tab" value="assign">';

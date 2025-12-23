@@ -38,54 +38,52 @@ class Expman_Servers_Actions {
         return array();
     }
 
+    private function sanitize_date_value( $value ) {
+        $value = is_string( $value ) ? trim( $value ) : '';
+        if ( $value === '' ) { return null; }
+
+        $formats = array( 'd/m/Y', 'd-m-Y', 'd.m.Y', 'Y-m-d', 'Y/m/d', 'Y-m-d H:i:s' );
+        foreach ( $formats as $fmt ) {
+            $dt = DateTime::createFromFormat( $fmt, $value );
+            if ( $dt instanceof DateTime ) {
+                return $dt->format( 'Y-m-d' );
+            }
+        }
+
+        if ( preg_match( '/^\\d{6}$/', $value ) ) {
+            $day = substr( $value, 0, 2 );
+            $month = substr( $value, 2, 2 );
+            $year = '20' . substr( $value, 4, 2 );
+            $dt = DateTime::createFromFormat( 'd/m/Y', "{$day}/{$month}/{$year}" );
+            if ( $dt instanceof DateTime ) {
+                return $dt->format( 'Y-m-d' );
+            }
+        }
+
+        if ( preg_match( '/^\\d{8}$/', $value ) ) {
+            $day = substr( $value, 0, 2 );
+            $month = substr( $value, 2, 2 );
+            $year = substr( $value, 4, 4 );
+            $dt = DateTime::createFromFormat( 'd/m/Y', "{$day}/{$month}/{$year}" );
+            if ( $dt instanceof DateTime ) {
+                return $dt->format( 'Y-m-d' );
+            }
+        }
+
+        if ( preg_match( '/^\\d{4}-\\d{2}-\\d{2}$/', $value ) ) {
+            $ts = strtotime( $value . ' 00:00:00' );
+            if ( $ts ) {
+                return gmdate( 'Y-m-d', $ts );
+            }
+        }
+
+        return null;
+    }
+
     
     public function action_save_server() {
         global $wpdb;
         $servers_table = $wpdb->prefix . Expman_Servers_Page::TABLE_SERVERS;
-
-        $sanitize_date = function( $value ) {
-            $value = is_string( $value ) ? trim( $value ) : '';
-            if ( $value === '' ) { return null; }
-
-            // UI is dd/mm/yyyy, but accept common variants + DB formats.
-            $formats = array( 'd/m/Y', 'd-m-Y', 'd.m.Y', 'Y-m-d', 'Y/m/d', 'Y-m-d H:i:s' );
-            foreach ( $formats as $fmt ) {
-                $dt = DateTime::createFromFormat( $fmt, $value );
-                if ( $dt instanceof DateTime ) {
-                    return $dt->format( 'Y-m-d' );
-                }
-            }
-
-            if ( preg_match( '/^\d{6}$/', $value ) ) {
-                $day = substr( $value, 0, 2 );
-                $month = substr( $value, 2, 2 );
-                $year = '20' . substr( $value, 4, 2 );
-                $dt = DateTime::createFromFormat( 'd/m/Y', "{$day}/{$month}/{$year}" );
-                if ( $dt instanceof DateTime ) {
-                    return $dt->format( 'Y-m-d' );
-                }
-            }
-
-            if ( preg_match( '/^\d{8}$/', $value ) ) {
-                $day = substr( $value, 0, 2 );
-                $month = substr( $value, 2, 2 );
-                $year = substr( $value, 4, 4 );
-                $dt = DateTime::createFromFormat( 'd/m/Y', "{$day}/{$month}/{$year}" );
-                if ( $dt instanceof DateTime ) {
-                    return $dt->format( 'Y-m-d' );
-                }
-            }
-
-            // Fallback: only if it looks unambiguous.
-            if ( preg_match( '/^\d{4}-\d{2}-\d{2}$/', $value ) ) {
-                $ts = strtotime( $value . ' 00:00:00' );
-                if ( $ts ) {
-                    return gmdate( 'Y-m-d', $ts );
-                }
-            }
-
-            return null;
-        };
 
         $id = intval( $_POST['server_id'] ?? 0 );
 
@@ -95,9 +93,9 @@ class Expman_Servers_Actions {
 
         $service_tag           = strtoupper( sanitize_text_field( $_POST['service_tag'] ?? '' ) );
         $express_service_code  = sanitize_text_field( $_POST['express_service_code'] ?? '' );
-        $ship_date             = $sanitize_date( sanitize_text_field( $_POST['ship_date'] ?? '' ) );
-        $ending_on             = $sanitize_date( sanitize_text_field( $_POST['ending_on'] ?? '' ) );
-        $last_renewal_date     = $sanitize_date( sanitize_text_field( $_POST['last_renewal_date'] ?? '' ) );
+        $ship_date             = $this->sanitize_date_value( sanitize_text_field( $_POST['ship_date'] ?? '' ) );
+        $ending_on             = $this->sanitize_date_value( sanitize_text_field( $_POST['ending_on'] ?? '' ) );
+        $last_renewal_date     = $this->sanitize_date_value( sanitize_text_field( $_POST['last_renewal_date'] ?? '' ) );
         $service_level         = sanitize_text_field( $_POST['service_level'] ?? '' );
         $server_model          = sanitize_text_field( $_POST['server_model'] ?? '' );
 
@@ -605,6 +603,11 @@ class Expman_Servers_Actions {
         $customer_number = sanitize_text_field( $_POST['customer_number'] ?? $stage['customer_number'] ?? '' );
         $customer_name = sanitize_text_field( $_POST['customer_name'] ?? $stage['customer_name'] ?? '' );
         $service_tag = strtoupper( sanitize_text_field( $_POST['service_tag'] ?? $stage['service_tag'] ?? '' ) );
+        $last_renewal_date = null;
+        $last_renewal_date_raw = sanitize_text_field( $_POST['last_renewal_date'] ?? $stage['last_renewal_date'] ?? '' );
+        if ( $last_renewal_date_raw !== '' ) {
+            $last_renewal_date = $this->sanitize_date_value( $last_renewal_date_raw );
+        }
         $notes = wp_kses_post( $_POST['notes'] ?? $stage['notes'] ?? '' );
 
         if ( $service_tag === '' ) {
@@ -624,6 +627,7 @@ class Expman_Servers_Actions {
             'customer_number_snapshot' => $customer_number !== '' ? $customer_number : null,
             'customer_name_snapshot'   => $customer_name !== '' ? $customer_name : null,
             'service_tag'              => $service_tag,
+            'last_renewal_date'        => $last_renewal_date,
             'notes'                    => $notes,
             'created_at'               => current_time( 'mysql' ),
             'updated_at'               => current_time( 'mysql' ),

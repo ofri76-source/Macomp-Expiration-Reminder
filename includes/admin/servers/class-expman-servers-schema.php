@@ -81,6 +81,7 @@ class Expman_Servers_Schema {
             customer_number VARCHAR(64) NULL,
             customer_name VARCHAR(255) NULL,
             service_tag VARCHAR(32) NOT NULL,
+            last_renewal_date DATE NULL,
             notes TEXT NULL,
             created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
             PRIMARY KEY (id),
