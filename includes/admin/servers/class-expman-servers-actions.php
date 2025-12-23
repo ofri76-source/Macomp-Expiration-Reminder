@@ -46,11 +46,25 @@ class Expman_Servers_Actions {
         $sanitize_date = function( $value ) {
             $value = is_string( $value ) ? trim( $value ) : '';
             if ( $value === '' ) { return null; }
-            // Accept YYYY-MM-DD
-            if ( ! preg_match( '/^\d{4}-\d{2}-\d{2}$/', $value ) ) { return null; }
-            $ts = strtotime( $value . ' 00:00:00' );
-            if ( ! $ts ) { return null; }
-            return gmdate( 'Y-m-d', $ts );
+
+            // UI is dd/mm/yyyy, but accept common variants + DB formats.
+            $formats = array( 'd/m/Y', 'd-m-Y', 'd.m.Y', 'Y-m-d', 'Y/m/d', 'Y-m-d H:i:s' );
+            foreach ( $formats as $fmt ) {
+                $dt = DateTime::createFromFormat( $fmt, $value );
+                if ( $dt instanceof DateTime ) {
+                    return $dt->format( 'Y-m-d' );
+                }
+            }
+
+            // Fallback: only if it looks unambiguous.
+            if ( preg_match( '/^\d{4}-\d{2}-\d{2}$/', $value ) ) {
+                $ts = strtotime( $value . ' 00:00:00' );
+                if ( $ts ) {
+                    return gmdate( 'Y-m-d', $ts );
+                }
+            }
+
+            return null;
         };
 
         $id = intval( $_POST['server_id'] ?? 0 );
@@ -575,6 +589,17 @@ class Expman_Servers_Actions {
         $wpdb->delete( $stage_table, array( 'id' => $stage_id ) );
         $this->logger->log_server_event( null, 'import_delete', 'שורת שיוך נמחקה', array( 'stage_id' => $stage_id ), 'info' );
         $this->add_notice( 'שורת שיוך נמחקה.' );
+    }
+
+    public function action_empty_import_stage() {
+        global $wpdb;
+        $stage_table = $wpdb->prefix . Expman_Servers_Page::TABLE_SERVER_IMPORT_STAGE;
+        if ( empty( $this->option_key ) ) {
+            return;
+        }
+        $wpdb->query( $wpdb->prepare( "DELETE FROM {$stage_table} WHERE option_key=%s", $this->option_key ) );
+        $this->logger->log_server_event( null, 'stage_clear', 'טבלת שיוך נוקתה', array( 'option_key' => $this->option_key ), 'info' );
+        $this->add_notice( 'טבלת שיוך נוקתה.' );
     }
 
     public function action_export_csv() {
