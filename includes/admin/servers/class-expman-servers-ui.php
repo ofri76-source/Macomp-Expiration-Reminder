@@ -97,8 +97,9 @@ class Expman_Servers_UI {
         .expman-btn:hover{background:#264f8f;color:#fff;}
         .expman-btn.secondary{background:#eef3fb;border-color:#9fb3d9;color:#1f3b64;}
         .expman-btn.secondary:hover{background:#dfe9f7;color:#1f3b64;}
-        .expman-frontend .widefat{border:1px solid #c7d1e0;border-radius:8px;overflow:hidden;background:#fff;}
+        .expman-frontend .widefat{border:1px solid #c7d1e0;border-radius:8px;overflow:visible;background:#fff;}
         .expman-frontend .widefat{table-layout:auto;width:100%;}
+        .expman-table-wrap{overflow:visible;}
         .expman-frontend .widefat thead th{background:#2f5ea8;color:#fff;border-bottom:2px solid #244b86;padding:8px;}
         .expman-frontend .widefat tbody td{padding:8px;border-bottom:1px solid #e3e7ef;overflow-wrap:anywhere;word-break:break-word;}
         .expman-frontend .widefat th,.expman-frontend .widefat td{text-align:right;vertical-align:middle;}
@@ -110,7 +111,7 @@ class Expman_Servers_UI {
         .expman-days-yellow{background:#ffe4b8;color:#7a4c11;}
         .expman-days-red{background:#ffd1d1;color:#7a1f1f;}
         .expman-days-unknown{background:#e2e6eb;color:#2b3f5c;}
-        .expman-row-actions td{background:#f6f8fc;border-bottom:1px solid #e3e7ef;padding:8px;}
+        .expman-row-actions td{background:#f6f8fc;border-bottom:1px solid #e3e7ef;padding:8px;display:none;}
         .expman-row-actions .button{height:28px;line-height:26px;padding:0 10px;}
         .expman-col-customer-num{width:120px;}
         .expman-col-customer-name{width:160px;}
@@ -119,6 +120,7 @@ class Expman_Servers_UI {
         .expman-col-date{width:120px;}
         .expman-col-days{width:70px;}
         .expman-actionbar{display:flex;gap:10px;flex-wrap:wrap;justify-content:flex-start;align-items:center;margin:10px 0;}
+        .expman-align-left-field{direction:ltr;text-align:left;}
         .expman-modal-backdrop{position:fixed;inset:0;background:rgba(0,0,0,0.55);z-index:99999;display:none;align-items:center;justify-content:center;padding:16px;}
         .expman-modal{background:#fff;border-radius:14px;max-width:980px;width:100%;box-shadow:0 20px 60px rgba(0,0,0,0.25);overflow:hidden;}
         .expman-modal-header{display:flex;justify-content:space-between;align-items:center;padding:14px 16px;border-bottom:1px solid #e6e9ef;}
@@ -126,7 +128,7 @@ class Expman_Servers_UI {
         .expman-modal-close{all:unset;cursor:pointer;font-size:22px;line-height:1;padding:2px 8px;border-radius:8px;}
         .expman-modal-close:hover{background:#f3f5f8;}
         .expman-modal-body{padding:16px;}
-        .expman-customer-results{position:relative;}
+        .expman-customer-results{position:relative;z-index:99999;}
         .expman-customer-box{position:absolute;right:0;left:0;top:0;background:#fff;border:1px solid #ddd;border-radius:6px;z-index:99999;max-height:240px;overflow:auto;}
         </style>';
 
@@ -239,9 +241,13 @@ class Expman_Servers_UI {
     const id = row.getAttribute("data-expman-row-id");
     if(!id) return;
     const det = document.querySelector('tr.expman-details[data-for="'+id+'"]');
+    const actions = document.querySelector('tr.expman-row-actions[data-for="'+id+'"]');
     if(!det) return;
     const isHidden = window.getComputedStyle(det).display === "none";
     det.style.display = isHidden ? "table-row" : "none";
+    if(actions){
+      actions.style.display = isHidden ? "table-row" : "none";
+    }
   });
 
   // Edit toggle
@@ -252,9 +258,13 @@ class Expman_Servers_UI {
     const id = btn.getAttribute("data-id");
     if(!id) return;
     const frm = document.querySelector('tr.expman-inline-form[data-for="'+id+'"]');
+    const actions = document.querySelector('tr.expman-row-actions[data-for="'+id+'"]');
     if(!frm) return;
     const isHidden = window.getComputedStyle(frm).display === "none";
     frm.style.display = isHidden ? "table-row" : "none";
+    if(actions){
+      actions.style.display = isHidden ? "table-row" : "none";
+    }
   });
 
   // Simple table filters (client-side)
@@ -608,7 +618,7 @@ JS;
             echo '<td><span class="expman-days-pill ' . esc_attr( $days_class ) . '">' . esc_html( $days_label ) . '</span></td>';
             echo '</tr>';
 
-            echo '<tr class="expman-row-actions">';
+            echo '<tr class="expman-row-actions" data-for="' . esc_attr( $row->id ) . '">';
             echo '<td colspan="8">';
             echo '<div style="display:flex;gap:10px;align-items:center;justify-content:flex-start;flex-wrap:wrap;">';
             echo '<span><strong>Last Sync:</strong> ' . esc_html( self::fmt_datetime_short( $row->last_sync_at ) ) . '</span>';
@@ -736,7 +746,7 @@ JS;
 
         echo '<div><label>מספר לקוח</label><input type="text" name="customer_number" value="' . esc_attr( $row['customer_number_snapshot'] ) . '"></div>';
         echo '<div><label>שם לקוח</label><input type="text" name="customer_name" value="' . esc_attr( $row['customer_name_snapshot'] ) . '"></div>';
-        echo '<div><label>Service Tag</label><input type="text" name="service_tag" value="' . esc_attr( $row['service_tag'] ) . '" required></div>';
+        echo '<div><label>Service Tag</label><input type="text" name="service_tag" class="expman-align-left-field" value="' . esc_attr( $row['service_tag'] ) . '" required></div>';
 
         echo '<div><label>Express Service Code</label><input type="text" name="express_service_code" value="' . esc_attr( $row['express_service_code'] ) . '"></div>';
         $ship_ui  = self::fmt_date_short( $row['ship_date'] );
@@ -761,7 +771,7 @@ JS;
             '4 Hours  Mission Critical',
         );
 
-        echo '<div><label>מערכת הפעלה</label><select name="operating_system"><option value=""></option>';
+        echo '<div><label>מערכת הפעלה</label><select name="operating_system" class="expman-align-left-field"><option value=""></option>';
         $current_os = (string) $row['operating_system'];
         if ( $current_os !== '' && ! in_array( $current_os, $os_options, true ) ) {
             echo '<option value="' . esc_attr( $current_os ) . '" selected>' . esc_html( $current_os ) . '</option>';
@@ -771,7 +781,7 @@ JS;
         }
         echo '</select></div>';
 
-        echo '<div><label>סוג שירות</label><select name="service_level"><option value=""></option>';
+        echo '<div><label>סוג שירות</label><select name="service_level" class="expman-align-left-field"><option value=""></option>';
         foreach ( $service_levels as $opt ) {
             echo '<option value="' . esc_attr( $opt ) . '"' . selected( (string) $row['service_level'], $opt, false ) . '>' . esc_html( $opt ) . '</option>';
         }
@@ -901,12 +911,12 @@ JS;
             );
         }
         echo '<hr style="margin:24px 0;">';
-        echo '<h3>מערכות הפעלה</h3>';
+        echo '<h3 style="display:flex;align-items:center;gap:10px;">מערכות הפעלה <button type="button" class="button" id="expman-toggle-os">הצג/הסתר רשימה</button></h3>';
         echo '<form method="post" style="max-width:520px;">';
         wp_nonce_field( 'expman_save_dell_settings', 'expman_save_dell_settings_nonce' );
         echo '<input type="hidden" name="expman_action" value="save_dell_settings">';
         echo '<input type="hidden" name="tab" value="settings">';
-        echo '<table class="widefat" id="expman-os-table"><thead><tr><th>מערכת הפעלה</th><th style="width:90px;">פעולה</th></tr></thead><tbody>';
+        echo '<table class="widefat" id="expman-os-table" style="display:none;"><thead><tr><th>מערכת הפעלה</th><th style="width:90px;">פעולה</th></tr></thead><tbody>';
         foreach ( $os_list as $os ) {
             echo '<tr>';
             echo '<td><input type="text" name="dell_os_list[]" value="' . esc_attr( (string) $os ) . '" class="regular-text" style="width:100%;"></td>';
@@ -914,13 +924,23 @@ JS;
             echo '</tr>';
         }
         echo '</tbody></table>';
-        echo '<button type="button" class="button" id="expman-add-os" style="margin-top:8px;">הוסף מערכת הפעלה</button>';
-        echo '<button type="submit" class="button button-primary" style="margin-top:8px;">שמירה</button>';
+        echo '<button type="button" class="button" id="expman-add-os" style="margin-top:8px;display:none;">הוסף מערכת הפעלה</button>';
+        echo '<button type="submit" class="button button-primary" style="margin-top:8px;display:none;" id="expman-save-os">שמירה</button>';
         echo '<script>
         (function(){
             var addBtn = document.getElementById("expman-add-os");
             var table = document.getElementById("expman-os-table");
+            var toggleBtn = document.getElementById("expman-toggle-os");
+            var saveBtn = document.getElementById("expman-save-os");
             if(!addBtn || !table){return;}
+            if(toggleBtn){
+                toggleBtn.addEventListener("click", function(){
+                    var isHidden = table.style.display === "none";
+                    table.style.display = isHidden ? "" : "none";
+                    addBtn.style.display = isHidden ? "" : "none";
+                    if(saveBtn){ saveBtn.style.display = isHidden ? "" : "none"; }
+                });
+            }
             table.addEventListener("click", function(e){
                 var btn = e.target.closest(".expman-remove-os");
                 if(!btn){return;}
