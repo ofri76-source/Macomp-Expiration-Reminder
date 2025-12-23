@@ -60,7 +60,8 @@ class Expman_Firewalls_Actions {
         $is_managed  = isset( $_POST['is_managed'] ) ? intval( $_POST['is_managed'] ) : 1;
         $track_only  = isset( $_POST['track_only'] ) ? 1 : 0;
 
-        $expiry      = sanitize_text_field( $_POST['expiry_date'] ?? '' );
+        $expiry_input = sanitize_text_field( $_POST['expiry_date'] ?? '' );
+        $expiry       = $this->normalize_stage_date( $expiry_input );
         $access_url  = sanitize_text_field( $_POST['access_url'] ?? '' );
         $notes       = wp_kses_post( $_POST['notes'] ?? '' );
 
@@ -95,7 +96,7 @@ class Expman_Firewalls_Actions {
             }
         }
 
-        if ( ! empty( $expiry ) && ! preg_match( '/^\d{4}-\d{2}-\d{2}$/', $expiry ) ) {
+        if ( $expiry_input !== '' && $expiry === '' ) {
             $errors[] = 'תאריך תפוגה לא תקין.';
         }
 
@@ -711,8 +712,13 @@ class Expman_Firewalls_Actions {
         }
 
         if ( ! empty( $filters['expiry_date'] ) ) {
+            $needle = (string) $filters['expiry_date'];
+            $parsed = $this->normalize_stage_date( $needle );
+            if ( $parsed !== '' ) {
+                $needle = $parsed;
+            }
             $where .= " AND fw.expiry_date LIKE %s";
-            $params[] = '%' . $wpdb->esc_like( (string) $filters['expiry_date'] ) . '%';
+            $params[] = '%' . $wpdb->esc_like( $needle ) . '%';
         }
 
         $sql = "
