@@ -14,17 +14,30 @@ class Expman_Servers_UI {
     private static function fmt_date_short( $value ) {
         $value = trim( (string) $value );
         if ( $value === '' ) { return ''; }
+        // Prefer strict DB formats first (DATE / DATETIME) to avoid strtotime ambiguity.
+        $dt = DateTime::createFromFormat( 'Y-m-d', $value );
+        if ( $dt instanceof DateTime ) {
+            return $dt->format( 'd/m/Y' );
+        }
+        $dt = DateTime::createFromFormat( 'Y-m-d H:i:s', $value );
+        if ( $dt instanceof DateTime ) {
+            return $dt->format( 'd/m/Y' );
+        }
         $ts = strtotime( $value );
         if ( ! $ts ) { return $value; }
-        return date_i18n( 'd/m/y', $ts );
+        return date_i18n( 'd/m/Y', $ts );
     }
 
     private static function fmt_datetime_short( $value ) {
         $value = trim( (string) $value );
         if ( $value === '' ) { return ''; }
+        $dt = DateTime::createFromFormat( 'Y-m-d H:i:s', $value );
+        if ( $dt instanceof DateTime ) {
+            return $dt->format( 'd/m/Y H:i' );
+        }
         $ts = strtotime( $value );
         if ( ! $ts ) { return $value; }
-        return date_i18n( 'd/m/y H:i', $ts );
+        return date_i18n( 'd/m/Y H:i', $ts );
     }
 
     private function render_summary_cards() {
@@ -607,7 +620,7 @@ JS;
             .expman-servers-grid .full{grid-column:span 3}
             .expman-servers-grid label{display:block;font-size:12px;color:#333;margin-bottom:4px;font-weight:700}
             .expman-servers-grid input,.expman-servers-grid textarea,.expman-servers-grid select{width:100%;box-sizing:border-box}
-            .expman-servers-grid input[type=date]{height:30px}
+            .expman-servers-grid .expman-date-input{height:30px}
             .expman-servers-actions{display:flex;gap:10px;justify-content:flex-start;margin-top:12px;flex-wrap:wrap}
             @media (max-width: 900px){ .expman-servers-grid{grid-template-columns:repeat(1,minmax(160px,1fr));} .expman-servers-grid .full{grid-column:span 1} }
         </style>';
@@ -632,8 +645,10 @@ JS;
         echo '<div><label>Service Tag</label><input type="text" name="service_tag" value="' . esc_attr( $row['service_tag'] ) . '" required></div>';
 
         echo '<div><label>Express Service Code</label><input type="text" name="express_service_code" value="' . esc_attr( $row['express_service_code'] ) . '"></div>';
-        echo '<div><label>Ship Date</label><input type="date" name="ship_date" value="' . esc_attr( $row['ship_date'] ) . '"></div>';
-        echo '<div><label>Ending On</label><input type="date" name="ending_on" value="' . esc_attr( $row['ending_on'] ) . '"></div>';
+        $ship_ui  = self::fmt_date_short( $row['ship_date'] );
+        $end_ui   = self::fmt_date_short( $row['ending_on'] );
+        echo '<div><label>Ship Date</label><input type="text" class="expman-date-input" name="ship_date" value="' . esc_attr( $ship_ui ) . '" placeholder="dd/mm/yyyy" inputmode="numeric" pattern="\\d{2}\\/\\d{2}\\/\\d{4}"></div>';
+        echo '<div><label>Ending On</label><input type="text" class="expman-date-input" name="ending_on" value="' . esc_attr( $end_ui ) . '" placeholder="dd/mm/yyyy" inputmode="numeric" pattern="\\d{2}\\/\\d{2}\\/\\d{4}"></div>';
 
         echo '<div><label>סוג שירות</label><input type="text" name="service_level" value="' . esc_attr( $row['service_level'] ) . '"></div>';
         echo '<div><label>דגם שרת</label><input type="text" name="server_model" value="' . esc_attr( $row['server_model'] ) . '"></div>';
@@ -667,8 +682,24 @@ JS;
         $api_key = (string) ( $settings['api_key'] ?? '' );
         $red_days = intval( $settings['red_days'] ?? 30 );
         $yellow_days = intval( $settings['yellow_days'] ?? 60 );
-        $contact_name  = (string) ( $settings['contact_name'] ?? '' );
-        $contact_email = (string) ( $settings['contact_email'] ?? '' );
+        $contacts = array();
+        if ( ! empty( $settings['contacts'] ) && is_array( $settings['contacts'] ) ) {
+            foreach ( $settings['contacts'] as $c ) {
+                if ( ! is_array( $c ) ) { continue; }
+                $name  = (string) ( $c['name'] ?? '' );
+                $email = (string) ( $c['email'] ?? '' );
+                if ( $name === '' && $email === '' ) { continue; }
+                $contacts[] = array( 'name' => $name, 'email' => $email );
+            }
+        }
+        // Backward-compat (single contact)
+        if ( empty( $contacts ) ) {
+            $contact_name  = (string) ( $settings['contact_name'] ?? '' );
+            $contact_email = (string) ( $settings['contact_email'] ?? '' );
+            if ( $contact_name !== '' || $contact_email !== '' ) {
+                $contacts[] = array( 'name' => $contact_name, 'email' => $contact_email );
+            }
+        }
 
         echo '<h3>הגדרות Dell TechDirect</h3>';
         echo '<form method="post" style="max-width:520px;">';
@@ -679,12 +710,58 @@ JS;
         echo '<tr><th>Client ID</th><td><input type="text" name="dell_client_id" value="' . esc_attr( $client_id ) . '" class="regular-text"></td></tr>';
         echo '<tr><th>Client Secret</th><td><input type="password" name="dell_client_secret" value="' . esc_attr( $client_secret ) . '" class="regular-text"></td></tr>';
         echo '<tr><th>API Key</th><td><input type="text" name="dell_api_key" value="' . esc_attr( $api_key ) . '" class="regular-text"></td></tr>';
-        echo '<tr><th>איש קשר להצעות</th><td><input type="text" name="dell_contact_name" value="' . esc_attr( $contact_name ) . '" class="regular-text"></td></tr>';
-        echo '<tr><th>מייל איש קשר</th><td><input type="email" name="dell_contact_email" value="' . esc_attr( $contact_email ) . '" class="regular-text" placeholder="name@example.com"></td></tr>';
+        echo '</tbody></table>';
+
+        echo '<h4 style="margin:16px 0 8px;">אנשי קשר להצעות</h4>';
+        echo '<p style="margin:0 0 8px;color:#666;">האיש קשר הראשון ברשימה משמש כברירת מחדל לכפתור "בקשת הצעה".</p>';
+        echo '<table class="widefat" id="dell-contacts-table" style="max-width:520px;">';
+        echo '<thead><tr><th>שם</th><th>מייל</th><th style="width:90px;">פעולה</th></tr></thead><tbody>';
+        if ( empty( $contacts ) ) {
+            $contacts = array( array( 'name' => '', 'email' => '' ) );
+        }
+        foreach ( $contacts as $c ) {
+            echo '<tr>';
+            echo '<td><input type="text" name="dell_contact_name[]" value="' . esc_attr( (string) ( $c['name'] ?? '' ) ) . '" class="regular-text" style="width:100%;"></td>';
+            echo '<td><input type="email" name="dell_contact_email[]" value="' . esc_attr( (string) ( $c['email'] ?? '' ) ) . '" class="regular-text" placeholder="name@example.com" style="width:100%;"></td>';
+            echo '<td><button type="button" class="button dell-remove-contact">הסר</button></td>';
+            echo '</tr>';
+        }
+        echo '</tbody></table>';
+        echo '<button type="button" class="button" id="dell-add-contact" style="margin-top:8px;">הוסף איש קשר</button>';
+
+        echo '<table class="form-table" style="max-width:520px;"><tbody>';
         
         echo '<tr><th>Red Days</th><td><input type="number" name="dell_red_days" value="' . esc_attr( $red_days ) . '" class="small-text"></td></tr>';
         echo '<tr><th>Yellow Days</th><td><input type="number" name="dell_yellow_days" value="' . esc_attr( $yellow_days ) . '" class="small-text"></td></tr>';
         echo '</tbody></table>';
+        echo '<script>
+        (function(){
+            var addBtn = document.getElementById("dell-add-contact");
+            var table = document.getElementById("dell-contacts-table");
+            if(!addBtn || !table){return;}
+            table.addEventListener("click", function(e){
+                var btn = e.target.closest(".dell-remove-contact");
+                if(!btn){return;}
+                var tr = btn.closest("tr");
+                if(!tr){return;}
+                var body = table.querySelector("tbody");
+                if(body && body.querySelectorAll("tr").length <= 1){
+                    tr.querySelectorAll("input").forEach(function(i){i.value="";});
+                    return;
+                }
+                tr.remove();
+            });
+            addBtn.addEventListener("click", function(){
+                var body = table.querySelector("tbody");
+                if(!body){return;}
+                var tr = document.createElement("tr");
+                tr.innerHTML = "<td><input type=\"text\" name=\"dell_contact_name[]\" value=\"\" class=\"regular-text\" style=\"width:100%;\"></td>"+
+                              "<td><input type=\"email\" name=\"dell_contact_email[]\" value=\"\" class=\"regular-text\" placeholder=\"name@example.com\" style=\"width:100%;\"></td>"+
+                              "<td><button type=\"button\" class=\"button dell-remove-contact\">הסר</button></td>";
+                body.appendChild(tr);
+            });
+        })();
+        </script>';
         echo '<button type="submit" class="button button-primary">שמירה</button>';
         echo '</form>';
 
@@ -786,6 +863,13 @@ JS;
         echo '<input type="hidden" name="tab" value="assign">';
         echo '<input type="file" name="servers_file" accept=".csv">';
         echo '<button type="submit" class="button">ייבוא CSV</button>';
+        echo '</form>';
+
+        echo '<form method="post" style="margin-bottom:16px;">';
+        wp_nonce_field( 'expman_empty_servers_stage', 'expman_empty_servers_stage_nonce' );
+        echo '<input type="hidden" name="expman_action" value="empty_import_stage">';
+        echo '<input type="hidden" name="tab" value="assign">';
+        echo '<button type="submit" class="button" onclick="return confirm(\'לנקות את כל רשימת השיוך?\');">נקה רשימה</button>';
         echo '</form>';
 
         if ( empty( $rows ) ) {
