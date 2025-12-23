@@ -56,6 +56,26 @@ class Expman_Servers_Actions {
                 }
             }
 
+            if ( preg_match( '/^\d{6}$/', $value ) ) {
+                $day = substr( $value, 0, 2 );
+                $month = substr( $value, 2, 2 );
+                $year = '20' . substr( $value, 4, 2 );
+                $dt = DateTime::createFromFormat( 'd/m/Y', "{$day}/{$month}/{$year}" );
+                if ( $dt instanceof DateTime ) {
+                    return $dt->format( 'Y-m-d' );
+                }
+            }
+
+            if ( preg_match( '/^\d{8}$/', $value ) ) {
+                $day = substr( $value, 0, 2 );
+                $month = substr( $value, 2, 2 );
+                $year = substr( $value, 4, 4 );
+                $dt = DateTime::createFromFormat( 'd/m/Y', "{$day}/{$month}/{$year}" );
+                if ( $dt instanceof DateTime ) {
+                    return $dt->format( 'Y-m-d' );
+                }
+            }
+
             // Fallback: only if it looks unambiguous.
             if ( preg_match( '/^\d{4}-\d{2}-\d{2}$/', $value ) ) {
                 $ts = strtotime( $value . ' 00:00:00' );
@@ -77,6 +97,7 @@ class Expman_Servers_Actions {
         $express_service_code  = sanitize_text_field( $_POST['express_service_code'] ?? '' );
         $ship_date             = $sanitize_date( sanitize_text_field( $_POST['ship_date'] ?? '' ) );
         $ending_on             = $sanitize_date( sanitize_text_field( $_POST['ending_on'] ?? '' ) );
+        $last_renewal_date     = $sanitize_date( sanitize_text_field( $_POST['last_renewal_date'] ?? '' ) );
         $service_level         = sanitize_text_field( $_POST['service_level'] ?? '' );
         $server_model          = sanitize_text_field( $_POST['server_model'] ?? '' );
 
@@ -130,6 +151,7 @@ class Expman_Servers_Actions {
             'express_service_code'     => $express_service_code !== '' ? $express_service_code : null,
             'ship_date'                => $ship_date,
             'ending_on'                => $ending_on,
+            'last_renewal_date'        => $last_renewal_date,
             'service_level'            => $service_level !== '' ? $service_level : null,
             'server_model'             => $server_model !== '' ? $server_model : null,
             'notes'                    => $notes,
@@ -163,6 +185,7 @@ class Expman_Servers_Actions {
                     array( 'label' => 'Express Service Code', 'from' => $prev['express_service_code'] ?? '', 'to' => $express_service_code ),
                     array( 'label' => 'Ship Date', 'from' => $prev['ship_date'] ?? '', 'to' => $ship_date ),
                     array( 'label' => 'Ending On', 'from' => $prev['ending_on'] ?? '', 'to' => $ending_on ),
+                    array( 'label' => 'תאריך חידוש אחרון', 'from' => $prev['last_renewal_date'] ?? '', 'to' => $last_renewal_date ),
                     array( 'label' => 'סוג שירות', 'from' => $prev['service_level'] ?? '', 'to' => $service_level ),
                     array( 'label' => 'דגם שרת', 'from' => $prev['server_model'] ?? '', 'to' => $server_model ),
                     array( 'label' => 'הערות', 'from' => $prev['notes'] ?? '', 'to' => $notes ),
@@ -291,7 +314,7 @@ class Expman_Servers_Actions {
         return 'green';
     }
 
-    public function get_servers_rows( $filters = array(), $orderby = 'ending_on', $order = 'ASC', $include_deleted = false ) {
+    public function get_servers_rows( $filters = array(), $orderby = 'ending_on', $order = 'ASC', $include_deleted = false, $limit = 0, $offset = 0 ) {
         global $wpdb;
         $servers_table = $wpdb->prefix . Expman_Servers_Page::TABLE_SERVERS;
 
@@ -315,7 +338,7 @@ class Expman_Servers_Actions {
             $params[] = '%' . $wpdb->esc_like( strtoupper( $filters['service_tag'] ) ) . '%';
         }
 
-        $allowed_order = array( 'ending_on', 'service_tag', 'customer_number_snapshot', 'customer_name_snapshot', 'ship_date' );
+        $allowed_order = array( 'ending_on', 'service_tag', 'customer_number_snapshot', 'customer_name_snapshot', 'ship_date', 'days_to_end' );
         if ( ! in_array( $orderby, $allowed_order, true ) ) {
             $orderby = 'ending_on';
         }
@@ -323,10 +346,50 @@ class Expman_Servers_Actions {
 
         $where_sql = 'WHERE ' . implode( ' AND ', $where );
 
-        $sql = "SELECT *, DATEDIFF(ending_on, CURDATE()) AS days_to_end FROM {$servers_table} {$where_sql} ORDER BY {$orderby} {$order}, id DESC";
+        $order_sql = "{$orderby} {$order}, id DESC";
+        if ( $orderby === 'days_to_end' ) {
+            $order_sql = "(ending_on IS NULL) ASC, days_to_end {$order}, id DESC";
+        }
+
+        $sql = "SELECT *, DATEDIFF(ending_on, CURDATE()) AS days_to_end FROM {$servers_table} {$where_sql} ORDER BY {$order_sql}";
         $sql = $wpdb->prepare( $sql, $params );
 
+        if ( $limit > 0 ) {
+            $limit = intval( $limit );
+            $offset = max( 0, intval( $offset ) );
+            $sql .= $wpdb->prepare( ' LIMIT %d OFFSET %d', $limit, $offset );
+        }
+
         return $wpdb->get_results( $sql );
+    }
+
+    public function get_servers_total( $filters = array(), $include_deleted = false ) {
+        global $wpdb;
+        $servers_table = $wpdb->prefix . Expman_Servers_Page::TABLE_SERVERS;
+
+        $where = array( 'option_key = %s' );
+        $params = array( $this->option_key );
+
+        if ( ! $include_deleted ) {
+            $where[] = 'deleted_at IS NULL';
+        }
+
+        if ( ! empty( $filters['customer_number'] ) ) {
+            $where[] = 'customer_number_snapshot LIKE %s';
+            $params[] = '%' . $wpdb->esc_like( $filters['customer_number'] ) . '%';
+        }
+        if ( ! empty( $filters['customer_name'] ) ) {
+            $where[] = 'customer_name_snapshot LIKE %s';
+            $params[] = '%' . $wpdb->esc_like( $filters['customer_name'] ) . '%';
+        }
+        if ( ! empty( $filters['service_tag'] ) ) {
+            $where[] = 'service_tag LIKE %s';
+            $params[] = '%' . $wpdb->esc_like( strtoupper( $filters['service_tag'] ) ) . '%';
+        }
+
+        $where_sql = 'WHERE ' . implode( ' AND ', $where );
+        $sql = $wpdb->prepare( "SELECT COUNT(*) FROM {$servers_table} {$where_sql}", $params );
+        return intval( $wpdb->get_var( $sql ) );
     }
 
     public function get_summary_counts() {
@@ -627,18 +690,19 @@ class Expman_Servers_Actions {
         $out = fopen( 'php://output', 'w' );
         if ( $out ) {
             fwrite( $out, "\xEF\xBB\xBF" );
-            fputcsv( $out, array(
-                'מספר לקוח',
-                'שם לקוח',
-                'Service Tag',
-                'Express Service Code',
-                'Ship Date',
-                'Ending on',
-                'סוג שירות',
-                'דגם שרת',
-                'הודעה זמנית פעילה',
-                'טקסט הודעה זמנית',
-                'הערות',
+                fputcsv( $out, array(
+                    'מספר לקוח',
+                    'שם לקוח',
+                    'Service Tag',
+                    'Express Service Code',
+                    'Ship Date',
+                    'Ending on',
+                    'תאריך חידוש אחרון',
+                    'סוג שירות',
+                    'דגם שרת',
+                    'הודעה זמנית פעילה',
+                    'טקסט הודעה זמנית',
+                    'הערות',
             ) );
 
             foreach ( (array) $rows as $row ) {
@@ -649,6 +713,7 @@ class Expman_Servers_Actions {
                     $row['express_service_code'] ?? '',
                     $row['ship_date'] ?? '',
                     $row['ending_on'] ?? '',
+                    $row['last_renewal_date'] ?? '',
                     $row['service_level'] ?? '',
                     $row['server_model'] ?? '',
                     ! empty( $row['temp_notice_enabled'] ) ? 'כן' : 'לא',

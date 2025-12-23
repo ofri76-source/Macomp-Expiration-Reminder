@@ -70,13 +70,26 @@ class Expman_Servers_Importer {
 
             $exists = $wpdb->get_var(
                 $wpdb->prepare(
-                    "SELECT id FROM {$servers_table} WHERE service_tag=%s AND deleted_at IS NULL",
+                    "SELECT id FROM {$servers_table} WHERE service_tag=%s",
                     $service_tag
                 )
             );
             if ( $exists ) {
                 $skipped++;
                 $errors[] = "שורה {$row_num}: Service Tag כבר קיים ({$service_tag}).";
+                continue;
+            }
+
+            $stage_exists = $wpdb->get_var(
+                $wpdb->prepare(
+                    "SELECT id FROM {$stage_table} WHERE option_key=%s AND service_tag=%s",
+                    $this->option_key,
+                    $service_tag
+                )
+            );
+            if ( $stage_exists ) {
+                $skipped++;
+                $errors[] = "שורה {$row_num}: Service Tag כבר קיים בשלב ({$service_tag}).";
                 continue;
             }
 
