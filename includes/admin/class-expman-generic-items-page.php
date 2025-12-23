@@ -81,7 +81,12 @@ class Expman_Generic_Items_Page {
             echo '<td>' . esc_html( $item->customer_id ) . '</td>';
             echo '<td>' . esc_html( $item->name ) . '</td>';
             echo '<td>' . esc_html( $item->identifier ) . '</td>';
-            echo '<td>' . esc_html( $item->expiry_date ) . '</td>';
+            $exp_disp = '';
+            if ( ! empty( $item->expiry_date ) ) {
+                $ts = strtotime( (string) $item->expiry_date );
+                $exp_disp = $ts ? date_i18n( 'd/m/y', $ts ) : (string) $item->expiry_date;
+            }
+            echo '<td>' . esc_html( $exp_disp ) . '</td>';
             echo '<td>' . esc_html( $item->ip_address ) . '</td>';
             echo '<td>' . esc_html( mb_substr( (string) $item->notes, 0, 50 ) ) . '</td>';
             echo '<td><a href="' . esc_url( $edit_url ) . '">Edit</a> | <a href="' . esc_url( $delete_url ) . '" onclick="return confirm(\'Move to trash?\');">Trash</a></td>';
