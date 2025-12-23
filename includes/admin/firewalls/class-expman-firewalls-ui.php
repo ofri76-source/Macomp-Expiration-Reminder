@@ -927,7 +927,7 @@ class Expman_Firewalls_UI {
             $context = $logger->format_log_context( $log->context ?? '' );
             $created_at = '';
             if ( ! empty( $log->created_at ) ) {
-                $created_at = date_i18n( 'd/m/Y H:i', strtotime( $log->created_at ) );
+                $created_at = date_i18n( 'd/m/y H:i', strtotime( $log->created_at ) );
             }
             echo '<tr>';
             echo '<td>' . esc_html( $created_at ) . '</td>';
@@ -1176,7 +1176,7 @@ class Expman_Firewalls_UI {
             echo '<td colspan="' . esc_attr( $column_count ) . '">';
             $created_label = '';
             if ( ! empty( $r->created_at ) ) {
-                $created_label = date_i18n( 'd-m-Y', strtotime( $r->created_at ) );
+                $created_label = date_i18n( 'd/m/y', strtotime( $r->created_at ) );
             }
             $contact_button = '';
             if ( ! empty( $vendor_contacts ) ) {
@@ -1196,7 +1196,7 @@ class Expman_Firewalls_UI {
             echo '<div style="display:flex;gap:20px;flex-wrap:wrap;">';
             echo '<div style="min-width:260px;"><strong>הערה קבועה:</strong><div style="white-space:pre-wrap;">' . esc_html( (string) $r->notes ) . '</div></div>';
             echo '<div style="min-width:260px;"><strong>הודעה זמנית:</strong><div style="white-space:pre-wrap;">' . esc_html( intval( $r->temp_notice_enabled ) ? (string) $r->temp_notice : '' ) . '</div></div>';
-            echo '<div style="min-width:180px;"><strong>תאריך לחידוש:</strong> ' . esc_html( ( ! empty( $r->expiry_date ) ? date_i18n( 'd-m-Y', strtotime( $r->expiry_date ) ) : '' ) ) . '</div>';
+            echo '<div style="min-width:180px;"><strong>תאריך לחידוש:</strong> ' . esc_html( ( ! empty( $r->expiry_date ) ? date_i18n( 'd/m/y', strtotime( $r->expiry_date ) ) : '' ) ) . '</div>';
             echo '<div style="min-width:200px;"><strong>תאריך רישום:</strong> ' . esc_html( $created_label ) . '</div>';
             echo '<div style="min-width:200px;"><strong>URL:</strong> ' . $access_btn . '</div>';
             if ( $contact_button !== '' ) {
