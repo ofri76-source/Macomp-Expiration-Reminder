@@ -54,11 +54,12 @@ class Expman_Servers_Importer {
                 continue;
             }
 
-            $col = array_pad( $data, 4, '' );
+            $col = array_pad( $data, 5, '' );
             $service_tag = trim( (string) $this->get_value( $data, $header_map, array( 'service_tag', 'service tag', 'tag' ), $col[0] ) );
             $customer_number = trim( (string) $this->get_value( $data, $header_map, array( 'customer_number', 'customer number' ), $col[1] ) );
             $customer_name = trim( (string) $this->get_value( $data, $header_map, array( 'customer_name', 'customer name' ), $col[2] ) );
-            $notes = trim( (string) $this->get_value( $data, $header_map, array( 'notes', 'note' ), $col[3] ) );
+            $last_renewal = trim( (string) $this->get_value( $data, $header_map, array( 'last_renewal_date', 'last renewal date', 'תאריך חידוש אחרון', 'תאריך חידוש' ), $col[3] ) );
+            $notes = trim( (string) $this->get_value( $data, $header_map, array( 'notes', 'note', 'הערות' ), $col[4] ) );
 
             if ( $service_tag === '' ) {
                 $skipped++;
@@ -67,16 +68,30 @@ class Expman_Servers_Importer {
             }
 
             $service_tag = strtoupper( $service_tag );
+            $last_renewal_date = $this->sanitize_date( $last_renewal );
 
             $exists = $wpdb->get_var(
                 $wpdb->prepare(
-                    "SELECT id FROM {$servers_table} WHERE service_tag=%s AND deleted_at IS NULL",
+                    "SELECT id FROM {$servers_table} WHERE service_tag=%s",
                     $service_tag
                 )
             );
             if ( $exists ) {
                 $skipped++;
                 $errors[] = "שורה {$row_num}: Service Tag כבר קיים ({$service_tag}).";
+                continue;
+            }
+
+            $stage_exists = $wpdb->get_var(
+                $wpdb->prepare(
+                    "SELECT id FROM {$stage_table} WHERE option_key=%s AND service_tag=%s",
+                    $this->option_key,
+                    $service_tag
+                )
+            );
+            if ( $stage_exists ) {
+                $skipped++;
+                $errors[] = "שורה {$row_num}: Service Tag כבר קיים בשלב ({$service_tag}).";
                 continue;
             }
 
@@ -87,10 +102,11 @@ class Expman_Servers_Importer {
                     'customer_number' => $customer_number !== '' ? $customer_number : null,
                     'customer_name'   => $customer_name !== '' ? $customer_name : null,
                     'service_tag'     => $service_tag,
+                    'last_renewal_date' => $last_renewal_date,
                     'notes'           => $notes !== '' ? $notes : null,
                     'created_at'      => current_time( 'mysql' ),
                 ),
-                array( '%s', '%s', '%s', '%s', '%s', '%s' )
+                array( '%s', '%s', '%s', '%s', '%s', '%s', '%s' )
             );
 
             if ( ! $ok ) {
@@ -144,6 +160,41 @@ class Expman_Servers_Importer {
             }
         }
         return true;
+    }
+
+    private function sanitize_date( $value ) {
+        $value = is_string( $value ) ? trim( $value ) : '';
+        if ( $value === '' ) { return null; }
+
+        $formats = array( 'd/m/Y', 'd-m-Y', 'd.m.Y', 'Y-m-d', 'Y/m/d', 'Y-m-d H:i:s' );
+        foreach ( $formats as $fmt ) {
+            $dt = DateTime::createFromFormat( $fmt, $value );
+            if ( $dt instanceof DateTime ) {
+                return $dt->format( 'Y-m-d' );
+            }
+        }
+
+        if ( preg_match( '/^\\d{6}$/', $value ) ) {
+            $day = substr( $value, 0, 2 );
+            $month = substr( $value, 2, 2 );
+            $year = '20' . substr( $value, 4, 2 );
+            $dt = DateTime::createFromFormat( 'd/m/Y', "{$day}/{$month}/{$year}" );
+            if ( $dt instanceof DateTime ) {
+                return $dt->format( 'Y-m-d' );
+            }
+        }
+
+        if ( preg_match( '/^\\d{8}$/', $value ) ) {
+            $day = substr( $value, 0, 2 );
+            $month = substr( $value, 2, 2 );
+            $year = substr( $value, 4, 4 );
+            $dt = DateTime::createFromFormat( 'd/m/Y', "{$day}/{$month}/{$year}" );
+            if ( $dt instanceof DateTime ) {
+                return $dt->format( 'Y-m-d' );
+            }
+        }
+
+        return null;
     }
 }
 }
