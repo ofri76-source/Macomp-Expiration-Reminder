@@ -336,38 +336,71 @@ class Expiry_Manager_Plugin {
         }
 
         $service_tag = strtoupper( sanitize_text_field( $_POST['service_tag'] ?? '' ) );
+        $customer_id = isset( $_POST['customer_id'] ) ? intval( $_POST['customer_id'] ) : 0;
         $customer_number = sanitize_text_field( $_POST['customer_number'] ?? '' );
         $customer_name = sanitize_text_field( $_POST['customer_name'] ?? '' );
+
+        $express_service_code = sanitize_text_field( $_POST['express_service_code'] ?? '' );
+        $ship_date  = sanitize_text_field( $_POST['ship_date'] ?? '' );
+        $ending_on  = sanitize_text_field( $_POST['ending_on'] ?? '' );
+        $service_level = sanitize_text_field( $_POST['service_level'] ?? '' );
+        $server_model  = sanitize_text_field( $_POST['server_model'] ?? '' );
+        $notes = sanitize_textarea_field( $_POST['notes'] ?? '' );
+        $temp_notice_enabled = ! empty( $_POST['temp_notice_enabled'] ) ? 1 : 0;
+        $temp_notice_text = sanitize_textarea_field( $_POST['temp_notice_text'] ?? '' );
+
         $sync_now = ! empty( $_POST['sync_now'] );
 
+        $redirect_base = wp_get_referer();
+        if ( ! $redirect_base ) {
+            $redirect_base = admin_url( 'admin.php?page=expman_servers' );
+        }
+
         if ( $service_tag === '' ) {
-            wp_safe_redirect( add_query_arg( array( 'page' => 'expman_servers', 'msg' => 'missing_tag' ), admin_url( 'admin.php' ) ) );
+            wp_safe_redirect( add_query_arg( array( 'msg' => 'missing_tag' ), $redirect_base ) );
             exit;
         }
 
         require_once plugin_dir_path(__FILE__) . 'includes/admin/class-expman-servers-page.php';
+        // Ensure schema exists before insert.
+        if ( class_exists( 'Expman_Servers_Page' ) ) {
+            Expman_Servers_Page::install_tables();
+        }
         $page = new Expman_Servers_Page( self::OPTION_KEY, self::VERSION );
 
         global $wpdb;
         $table = $wpdb->prefix . Expman_Servers_Page::TABLE_SERVERS;
 
+        // Basic date validation (HTML date input yields YYYY-MM-DD)
+        $ship_date_db = preg_match( '/^\d{4}-\d{2}-\d{2}$/', $ship_date ) ? $ship_date : null;
+        $ending_on_db = preg_match( '/^\d{4}-\d{2}-\d{2}$/', $ending_on ) ? $ending_on : null;
+
         $wpdb->insert(
             $table,
             array(
                 'option_key'               => self::OPTION_KEY,
+                'customer_id'              => $customer_id > 0 ? $customer_id : null,
                 'customer_number_snapshot' => $customer_number !== '' ? $customer_number : null,
                 'customer_name_snapshot'   => $customer_name !== '' ? $customer_name : null,
                 'service_tag'              => $service_tag,
+                'express_service_code'     => $express_service_code !== '' ? $express_service_code : null,
+                'ship_date'                => $ship_date_db,
+                'ending_on'                => $ending_on_db,
+                'service_level'            => $service_level !== '' ? $service_level : null,
+                'server_model'             => $server_model !== '' ? $server_model : null,
+                'temp_notice_enabled'      => $temp_notice_enabled,
+                'temp_notice_text'         => $temp_notice_enabled ? $temp_notice_text : null,
+                'notes'                    => $notes !== '' ? $notes : null,
                 'created_at'               => current_time( 'mysql' ),
                 'updated_at'               => current_time( 'mysql' ),
             ),
-            array( '%s', '%s', '%s', '%s', '%s', '%s' )
+            array( '%s', '%d', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%d', '%s', '%s', '%s', '%s' )
         );
 
         $new_id = (int) $wpdb->insert_id;
 
         if ( ! $new_id ) {
-            wp_safe_redirect( add_query_arg( array( 'page' => 'expman_servers', 'msg' => 'db_error' ), admin_url( 'admin.php' ) ) );
+            wp_safe_redirect( add_query_arg( array( 'msg' => 'db_error' ), $redirect_base ) );
             exit;
         }
 
@@ -377,7 +410,7 @@ class Expiry_Manager_Plugin {
             $page->get_actions()->sync_server_by_id( $new_id );
         }
 
-        wp_safe_redirect( add_query_arg( array( 'page' => 'expman_servers', 'msg' => 'created' ), admin_url( 'admin.php' ) ) );
+        wp_safe_redirect( add_query_arg( array( 'msg' => 'created' ), $redirect_base ) );
         exit;
     }
 
