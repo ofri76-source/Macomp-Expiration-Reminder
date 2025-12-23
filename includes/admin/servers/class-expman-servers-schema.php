@@ -28,6 +28,7 @@ class Expman_Servers_Schema {
             express_service_code VARCHAR(64) NULL,
             ship_date DATE NULL,
             ending_on DATE NULL,
+            last_renewal_date DATE NULL,
             service_level VARCHAR(255) NULL,
             server_model VARCHAR(255) NULL,
             temp_notice_enabled TINYINT(1) NOT NULL DEFAULT 0,

@@ -189,7 +189,12 @@ class Expiry_Manager_Plugin {
             wp_send_json( array( 'items' => array() ) );
         }
 
-        $table = $wpdb->prefix . 'dc_customers';
+        $settings = get_option( self::OPTION_KEY, array() );
+        $table = $settings['customers_table'] ?? '';
+        $table = preg_replace( '/[^a-zA-Z0-9_]/', '', (string) $table );
+        if ( $table === '' ) {
+            $table = $wpdb->prefix . 'dc_customers';
+        }
         $like  = '%' . $wpdb->esc_like( $q ) . '%';
 
         $rows = $wpdb->get_results(
