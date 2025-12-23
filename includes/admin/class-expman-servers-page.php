@@ -141,6 +141,7 @@ class Expman_Servers_Page {
             'empty_trash'                => array( 'expman_empty_servers_trash', 'expman_empty_servers_trash_nonce' ),
             'import_csv'                 => array( 'expman_import_servers_csv', 'expman_import_servers_csv_nonce' ),
             'import_excel_settings'      => array( 'expman_import_servers_excel', 'expman_import_servers_excel_nonce' ),
+            'import_csv_direct'          => array( 'expman_import_servers_direct', 'expman_import_servers_direct_nonce' ),
             'assign_import_stage'        => array( 'expman_assign_servers_stage', 'expman_assign_servers_stage_nonce' ),
             'delete_import_stage'        => array( 'expman_delete_servers_stage', 'expman_delete_servers_stage_nonce' ),
             'empty_import_stage'         => array( 'expman_empty_servers_stage', 'expman_empty_servers_stage_nonce' ),
@@ -196,6 +197,11 @@ class Expman_Servers_Page {
 
             case 'import_excel_settings':
                 $this->actions->action_import_excel_settings();
+                $redirect_tab = 'settings';
+                break;
+
+            case 'import_csv_direct':
+                $this->actions->action_import_csv_direct();
                 $redirect_tab = 'settings';
                 break;
 
