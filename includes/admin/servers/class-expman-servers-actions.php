@@ -38,18 +38,38 @@ class Expman_Servers_Actions {
         return array();
     }
 
+    
     public function action_save_server() {
         global $wpdb;
         $servers_table = $wpdb->prefix . Expman_Servers_Page::TABLE_SERVERS;
 
+        $sanitize_date = function( $value ) {
+            $value = is_string( $value ) ? trim( $value ) : '';
+            if ( $value === '' ) { return null; }
+            // Accept YYYY-MM-DD
+            if ( ! preg_match( '/^\d{4}-\d{2}-\d{2}$/', $value ) ) { return null; }
+            $ts = strtotime( $value . ' 00:00:00' );
+            if ( ! $ts ) { return null; }
+            return gmdate( 'Y-m-d', $ts );
+        };
+
         $id = intval( $_POST['server_id'] ?? 0 );
-        $customer_id = intval( $_POST['customer_id'] ?? 0 );
+
+        $customer_id     = intval( $_POST['customer_id'] ?? 0 );
         $customer_number = sanitize_text_field( $_POST['customer_number'] ?? '' );
-        $customer_name = sanitize_text_field( $_POST['customer_name'] ?? '' );
-        $service_tag = strtoupper( sanitize_text_field( $_POST['service_tag'] ?? '' ) );
-        $notes = wp_kses_post( $_POST['notes'] ?? '' );
+        $customer_name   = sanitize_text_field( $_POST['customer_name'] ?? '' );
+
+        $service_tag           = strtoupper( sanitize_text_field( $_POST['service_tag'] ?? '' ) );
+        $express_service_code  = sanitize_text_field( $_POST['express_service_code'] ?? '' );
+        $ship_date             = $sanitize_date( sanitize_text_field( $_POST['ship_date'] ?? '' ) );
+        $ending_on             = $sanitize_date( sanitize_text_field( $_POST['ending_on'] ?? '' ) );
+        $service_level         = sanitize_text_field( $_POST['service_level'] ?? '' );
+        $server_model          = sanitize_text_field( $_POST['server_model'] ?? '' );
+
+        $notes        = wp_kses_post( $_POST['notes'] ?? '' );
         $temp_enabled = isset( $_POST['temp_notice_enabled'] ) ? 1 : 0;
-        $temp_notice = wp_kses_post( $_POST['temp_notice_text'] ?? '' );
+        $temp_notice  = wp_kses_post( $_POST['temp_notice_text'] ?? '' );
+        $sync_now     = isset( $_POST['sync_now'] ) ? 1 : 0;
 
         if ( ! $temp_enabled ) {
             $temp_notice = '';
@@ -60,16 +80,25 @@ class Expman_Servers_Actions {
             $errors[] = 'Service Tag חובה.';
         }
 
+        $existing_row = null;
         if ( $service_tag !== '' ) {
-            $existing = $wpdb->get_var(
-                $wpdb->prepare(
-                    "SELECT id FROM {$servers_table} WHERE service_tag=%s AND deleted_at IS NULL AND id != %d",
-                    $service_tag,
-                    $id
-                )
+            $existing_row = $wpdb->get_row(
+                $wpdb->prepare( "SELECT * FROM {$servers_table} WHERE service_tag=%s", $service_tag ),
+                ARRAY_A
             );
-            if ( $existing ) {
-                $errors[] = 'Service Tag כבר קיים במערכת.';
+
+            if ( $existing_row ) {
+                $existing_id = intval( $existing_row['id'] ?? 0 );
+                $is_deleted  = ! empty( $existing_row['deleted_at'] );
+
+                if ( $id > 0 && $existing_id !== $id ) {
+                    $errors[] = 'Service Tag כבר קיים במערכת.';
+                } elseif ( $id === 0 && ! $is_deleted ) {
+                    $errors[] = 'Service Tag כבר קיים במערכת.';
+                } elseif ( $id === 0 && $is_deleted ) {
+                    // Reuse deleted row to bypass UNIQUE(service_tag)
+                    $id = $existing_id;
+                }
             }
         }
 
@@ -79,20 +108,32 @@ class Expman_Servers_Actions {
         }
 
         $data = array(
-            'option_key'             => $this->option_key,
-            'customer_id'            => $customer_id > 0 ? $customer_id : null,
+            'option_key'               => $this->option_key,
+            'customer_id'              => $customer_id > 0 ? $customer_id : null,
             'customer_number_snapshot' => $customer_number !== '' ? $customer_number : null,
             'customer_name_snapshot'   => $customer_name !== '' ? $customer_name : null,
-            'service_tag'            => $service_tag,
-            'notes'                  => $notes,
-            'temp_notice_enabled'    => $temp_enabled,
-            'temp_notice_text'       => $temp_notice,
-            'updated_at'             => current_time( 'mysql' ),
+            'service_tag'              => $service_tag,
+            'express_service_code'     => $express_service_code !== '' ? $express_service_code : null,
+            'ship_date'                => $ship_date,
+            'ending_on'                => $ending_on,
+            'service_level'            => $service_level !== '' ? $service_level : null,
+            'server_model'             => $server_model !== '' ? $server_model : null,
+            'notes'                    => $notes,
+            'temp_notice_enabled'      => $temp_enabled,
+            'temp_notice_text'         => $temp_notice,
+            'updated_at'               => current_time( 'mysql' ),
         );
+
+        // If we reused a deleted row - restore it
+        if ( $id > 0 && $existing_row && ! empty( $existing_row['deleted_at'] ) ) {
+            $data['deleted_at'] = null;
+            $data['deleted_by'] = null;
+        }
 
         if ( $id > 0 ) {
             $prev = $wpdb->get_row( $wpdb->prepare( "SELECT * FROM {$servers_table} WHERE id=%d", $id ), ARRAY_A );
             $ok = $wpdb->update( $servers_table, $data, array( 'id' => $id ) );
+
             if ( $ok === false ) {
                 set_transient( 'expman_servers_errors', array( 'שמירה נכשלה: ' . $wpdb->last_error ), 90 );
                 $this->logger->log_server_event( $id, 'update', 'שמירה נכשלה', array( 'error' => $wpdb->last_error ), 'error' );
@@ -102,12 +143,17 @@ class Expman_Servers_Actions {
             $changes = array();
             if ( $prev ) {
                 $fields = array(
-                    array( 'key' => 'customer_number_snapshot', 'label' => 'מספר לקוח', 'from' => $prev['customer_number_snapshot'] ?? '', 'to' => $customer_number ),
-                    array( 'key' => 'customer_name_snapshot', 'label' => 'שם לקוח', 'from' => $prev['customer_name_snapshot'] ?? '', 'to' => $customer_name ),
-                    array( 'key' => 'service_tag', 'label' => 'Service Tag', 'from' => $prev['service_tag'] ?? '', 'to' => $service_tag ),
-                    array( 'key' => 'notes', 'label' => 'הערות', 'from' => $prev['notes'] ?? '', 'to' => $notes ),
-                    array( 'key' => 'temp_notice_enabled', 'label' => 'הודעה זמנית', 'from' => $prev['temp_notice_enabled'] ?? 0, 'to' => $temp_enabled ),
-                    array( 'key' => 'temp_notice_text', 'label' => 'טקסט הודעה זמנית', 'from' => $prev['temp_notice_text'] ?? '', 'to' => $temp_notice ),
+                    array( 'label' => 'מספר לקוח', 'from' => $prev['customer_number_snapshot'] ?? '', 'to' => $customer_number ),
+                    array( 'label' => 'שם לקוח',   'from' => $prev['customer_name_snapshot'] ?? '', 'to' => $customer_name ),
+                    array( 'label' => 'Service Tag', 'from' => $prev['service_tag'] ?? '', 'to' => $service_tag ),
+                    array( 'label' => 'Express Service Code', 'from' => $prev['express_service_code'] ?? '', 'to' => $express_service_code ),
+                    array( 'label' => 'Ship Date', 'from' => $prev['ship_date'] ?? '', 'to' => $ship_date ),
+                    array( 'label' => 'Ending On', 'from' => $prev['ending_on'] ?? '', 'to' => $ending_on ),
+                    array( 'label' => 'סוג שירות', 'from' => $prev['service_level'] ?? '', 'to' => $service_level ),
+                    array( 'label' => 'דגם שרת', 'from' => $prev['server_model'] ?? '', 'to' => $server_model ),
+                    array( 'label' => 'הערות', 'from' => $prev['notes'] ?? '', 'to' => $notes ),
+                    array( 'label' => 'הודעה זמנית', 'from' => (string) ( $prev['temp_notice_enabled'] ?? 0 ), 'to' => (string) $temp_enabled ),
+                    array( 'label' => 'טקסט הודעה זמנית', 'from' => $prev['temp_notice_text'] ?? '', 'to' => $temp_notice ),
                 );
                 foreach ( $fields as $field ) {
                     if ( (string) $field['from'] !== (string) $field['to'] ) {
@@ -120,19 +166,31 @@ class Expman_Servers_Actions {
                 }
             }
 
-            $this->logger->log_server_event( $id, 'update', 'שרת עודכן', array( 'changes' => $changes ), 'info' );
-            $this->add_notice( 'השרת עודכן.' );
-        } else {
-            $data['created_at'] = current_time( 'mysql' );
-            $ok = $wpdb->insert( $servers_table, $data );
-            if ( ! $ok ) {
-                set_transient( 'expman_servers_errors', array( 'שמירה נכשלה: ' . $wpdb->last_error ), 90 );
-                $this->logger->log_server_event( null, 'create', 'שמירה נכשלה', array( 'error' => $wpdb->last_error ), 'error' );
-                return;
+            $event = ( $existing_row && ! empty( $existing_row['deleted_at'] ) ) ? 'restore_update' : 'update';
+            $msg   = ( $existing_row && ! empty( $existing_row['deleted_at'] ) ) ? 'שרת שוחזר ועודכן' : 'שרת עודכן';
+            $this->logger->log_server_event( $id, $event, $msg, array( 'changes' => $changes ), 'info' );
+            $this->add_notice( $msg . '.' );
+
+            if ( $sync_now ) {
+                $this->sync_server_by_id( $id );
             }
-            $server_id = $wpdb->insert_id;
-            $this->logger->log_server_event( $server_id, 'create', 'שרת נוסף', array( 'service_tag' => $service_tag ), 'info' );
-            $this->add_notice( 'שרת נוסף.' );
+            return;
+        }
+
+        $data['created_at'] = current_time( 'mysql' );
+        $ok = $wpdb->insert( $servers_table, $data );
+        if ( ! $ok ) {
+            set_transient( 'expman_servers_errors', array( 'שמירה נכשלה: ' . $wpdb->last_error ), 90 );
+            $this->logger->log_server_event( null, 'create', 'שמירה נכשלה', array( 'error' => $wpdb->last_error ), 'error' );
+            return;
+        }
+
+        $server_id = intval( $wpdb->insert_id );
+        $this->logger->log_server_event( $server_id, 'create', 'שרת נוסף', array( 'service_tag' => $service_tag ), 'info' );
+        $this->add_notice( 'שרת נוסף.' );
+
+        if ( $sync_now ) {
+            $this->sync_server_by_id( $server_id );
         }
     }
 
