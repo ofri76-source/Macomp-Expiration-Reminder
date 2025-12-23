@@ -55,9 +55,9 @@ class Expman_Servers_Importer {
             }
 
             $col = array_pad( $data, 5, '' );
-            $service_tag = trim( (string) $this->get_value( $data, $header_map, array( 'service_tag', 'service tag', 'tag' ), $col[0] ) );
-            $customer_number = trim( (string) $this->get_value( $data, $header_map, array( 'customer_number', 'customer number' ), $col[1] ) );
-            $customer_name = trim( (string) $this->get_value( $data, $header_map, array( 'customer_name', 'customer name' ), $col[2] ) );
+            $service_tag = trim( (string) $this->get_value( $data, $header_map, array( 'service_tag', 'service tag', 'tag', 'Service Tag' ), $col[0] ) );
+            $customer_number = trim( (string) $this->get_value( $data, $header_map, array( 'customer_number', 'customer number', 'מספר לקוח' ), $col[1] ) );
+            $customer_name = trim( (string) $this->get_value( $data, $header_map, array( 'customer_name', 'customer name', 'שם לקוח' ), $col[2] ) );
             $last_renewal = trim( (string) $this->get_value( $data, $header_map, array( 'last_renewal_date', 'last renewal date', 'תאריך חידוש אחרון', 'תאריך חידוש' ), $col[3] ) );
             $notes = trim( (string) $this->get_value( $data, $header_map, array( 'notes', 'note', 'הערות' ), $col[4] ) );
 
@@ -195,6 +195,162 @@ class Expman_Servers_Importer {
         }
 
         return null;
+    }
+
+    private function sanitize_datetime( $value ) {
+        $value = is_string( $value ) ? trim( $value ) : '';
+        if ( $value === '' ) { return null; }
+
+        $formats = array( 'Y-m-d H:i:s', 'Y-m-d H:i', 'd/m/Y H:i', 'd/m/Y H:i:s' );
+        foreach ( $formats as $fmt ) {
+            $dt = DateTime::createFromFormat( $fmt, $value );
+            if ( $dt instanceof DateTime ) {
+                return $dt->format( 'Y-m-d H:i:s' );
+            }
+        }
+
+        $ts = strtotime( $value );
+        if ( $ts ) {
+            return gmdate( 'Y-m-d H:i:s', $ts );
+        }
+
+        return null;
+    }
+
+    private function parse_bool( $value ) {
+        $value = trim( (string) $value );
+        if ( $value === '' ) { return 0; }
+        $value = mb_strtolower( $value );
+        return in_array( $value, array( '1', 'כן', 'yes', 'true', 'on' ), true ) ? 1 : 0;
+    }
+
+    public function run_direct( $file_field = 'servers_direct_file' ) {
+        if ( empty( $_FILES[ $file_field ]['tmp_name'] ) ) {
+            set_transient( 'expman_servers_errors', array( 'לא נבחר קובץ ליבוא.' ), 90 );
+            return;
+        }
+
+        $tmp = $_FILES[ $file_field ]['tmp_name'];
+        $h = fopen( $tmp, 'r' );
+        if ( ! $h ) {
+            set_transient( 'expman_servers_errors', array( 'לא ניתן לקרוא את הקובץ.' ), 90 );
+            return;
+        }
+
+        global $wpdb;
+        $servers_table = $wpdb->prefix . Expman_Servers_Page::TABLE_SERVERS;
+
+        $row_num = 0;
+        $imported = 0;
+        $skipped = 0;
+        $errors = array();
+        $header_map = array();
+
+        while ( ( $data = fgetcsv( $h, 0, ',' ) ) !== false ) {
+            $row_num++;
+
+            if ( isset( $data[0] ) ) {
+                $data[0] = preg_replace( '/^\xEF\xBB\xBF/', '', (string) $data[0] );
+            }
+
+            if ( $row_num === 1 ) {
+                $header_map = $this->build_header_map( $data );
+                if ( ! empty( $header_map ) ) {
+                    continue;
+                }
+            }
+
+            if ( $this->is_empty_row( $data ) ) {
+                $skipped++;
+                continue;
+            }
+
+            $service_tag = trim( (string) $this->get_value( $data, $header_map, array( 'service tag', 'service_tag' ), '' ) );
+            if ( $service_tag === '' ) {
+                $skipped++;
+                $errors[] = "שורה {$row_num}: חסר Service Tag.";
+                continue;
+            }
+
+            $service_tag = strtoupper( $service_tag );
+
+            $exists = $wpdb->get_var(
+                $wpdb->prepare(
+                    "SELECT id FROM {$servers_table} WHERE service_tag=%s AND deleted_at IS NULL",
+                    $service_tag
+                )
+            );
+            if ( $exists ) {
+                $skipped++;
+                $errors[] = "שורה {$row_num}: Service Tag כבר קיים ({$service_tag}).";
+                continue;
+            }
+
+            $customer_id = intval( $this->get_value( $data, $header_map, array( 'customer id', 'customer_id' ), '' ) );
+            $customer_number = trim( (string) $this->get_value( $data, $header_map, array( 'מספר לקוח', 'customer number', 'customer_number' ), '' ) );
+            $customer_name = trim( (string) $this->get_value( $data, $header_map, array( 'שם לקוח', 'customer name', 'customer_name' ), '' ) );
+            $express_service_code = trim( (string) $this->get_value( $data, $header_map, array( 'express service code', 'express_service_code' ), '' ) );
+            $ship_date = $this->sanitize_date( $this->get_value( $data, $header_map, array( 'ship date', 'ship_date' ), '' ) );
+            $ending_on = $this->sanitize_date( $this->get_value( $data, $header_map, array( 'ending on', 'ending_on' ), '' ) );
+            $last_renewal_date = $this->sanitize_date( $this->get_value( $data, $header_map, array( 'תאריך חידוש אחרון', 'last renewal date', 'last_renewal_date' ), '' ) );
+            $operating_system = trim( (string) $this->get_value( $data, $header_map, array( 'מערכת הפעלה', 'operating system', 'operating_system' ), '' ) );
+            $service_level = trim( (string) $this->get_value( $data, $header_map, array( 'סוג שירות', 'service level', 'service_level' ), '' ) );
+            $server_model = trim( (string) $this->get_value( $data, $header_map, array( 'דגם שרת', 'server model', 'server_model' ), '' ) );
+            $temp_notice_enabled = $this->parse_bool( $this->get_value( $data, $header_map, array( 'הודעה זמנית פעילה', 'temp notice enabled', 'temp_notice_enabled' ), '' ) );
+            $temp_notice_text = trim( (string) $this->get_value( $data, $header_map, array( 'טקסט הודעה זמנית', 'temp notice text', 'temp_notice_text' ), '' ) );
+            $notes = trim( (string) $this->get_value( $data, $header_map, array( 'הערות', 'notes', 'note' ), '' ) );
+            $raw_json = trim( (string) $this->get_value( $data, $header_map, array( 'raw json', 'raw_json' ), '' ) );
+            $last_sync_at = $this->sanitize_datetime( $this->get_value( $data, $header_map, array( 'last sync', 'last_sync_at' ), '' ) );
+            $deleted_at = $this->sanitize_datetime( $this->get_value( $data, $header_map, array( 'deleted at', 'deleted_at' ), '' ) );
+            $deleted_by = intval( $this->get_value( $data, $header_map, array( 'deleted by', 'deleted_by' ), '' ) );
+            $created_at = $this->sanitize_datetime( $this->get_value( $data, $header_map, array( 'created at', 'created_at' ), '' ) );
+            $updated_at = $this->sanitize_datetime( $this->get_value( $data, $header_map, array( 'updated at', 'updated_at' ), '' ) );
+
+            $data_row = array(
+                'option_key'               => $this->option_key,
+                'customer_id'              => $customer_id > 0 ? $customer_id : null,
+                'customer_number_snapshot' => $customer_number !== '' ? $customer_number : null,
+                'customer_name_snapshot'   => $customer_name !== '' ? $customer_name : null,
+                'service_tag'              => $service_tag,
+                'express_service_code'     => $express_service_code !== '' ? $express_service_code : null,
+                'ship_date'                => $ship_date,
+                'ending_on'                => $ending_on,
+                'last_renewal_date'        => $last_renewal_date,
+                'operating_system'         => $operating_system !== '' ? $operating_system : null,
+                'service_level'            => $service_level !== '' ? $service_level : null,
+                'server_model'             => $server_model !== '' ? $server_model : null,
+                'temp_notice_enabled'      => $temp_notice_enabled,
+                'temp_notice_text'         => $temp_notice_text !== '' ? $temp_notice_text : null,
+                'notes'                    => $notes !== '' ? $notes : null,
+                'raw_json'                 => $raw_json !== '' ? $raw_json : null,
+                'last_sync_at'             => $last_sync_at,
+                'deleted_at'               => $deleted_at,
+                'deleted_by'               => $deleted_by > 0 ? $deleted_by : null,
+                'created_at'               => $created_at ?: current_time( 'mysql' ),
+                'updated_at'               => $updated_at ?: current_time( 'mysql' ),
+            );
+
+            $ok = $wpdb->insert( $servers_table, $data_row );
+            if ( ! $ok ) {
+                $skipped++;
+                $errors[] = "שורה {$row_num}: הוספה לטבלה הראשית נכשלה.";
+                continue;
+            }
+
+            $imported++;
+        }
+
+        fclose( $h );
+
+        $this->logger->log_server_event( null, 'import_direct', 'ייבוא CSV לטבלה ראשית', array( 'imported' => $imported, 'skipped' => $skipped ), 'info' );
+
+        if ( ! empty( $errors ) ) {
+            set_transient( 'expman_servers_errors', $errors, 90 );
+        }
+
+        if ( $imported > 0 ) {
+            set_transient( 'expman_servers_imported', $imported, 90 );
+        }
     }
 }
 }

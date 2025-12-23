@@ -532,6 +532,10 @@ class Expman_Firewalls_UI {
               results.appendChild(wrap);
             });
           });
+          document.addEventListener("keydown",function(e){
+            if(!e.target.classList.contains("expman-customer-search")) return;
+            if(e.key === "Enter"){ e.preventDefault(); }
+          });
           document.addEventListener("click",function(e){
             if(e.target.classList.contains("expman-customer-search")) return;
             document.querySelectorAll(".expman-customer-results").forEach(r=>{r.innerHTML="";});

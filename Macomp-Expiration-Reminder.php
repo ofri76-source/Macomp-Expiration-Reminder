@@ -202,6 +202,11 @@ class Expiry_Manager_Plugin {
         $has_is_deleted = $wpdb->get_var( $wpdb->prepare( "SHOW COLUMNS FROM {$table} LIKE %s", 'is_deleted' ) );
         $deleted_clause = $has_is_deleted ? 'is_deleted=0 AND ' : '';
 
+        $table_exists = $wpdb->get_var( $wpdb->prepare( "SHOW TABLES LIKE %s", $table ) );
+        if ( $table_exists !== $table ) {
+            wp_send_json( array( 'items' => array() ) );
+        }
+
         $rows = $wpdb->get_results(
             $wpdb->prepare(
                 "SELECT id, customer_name, customer_number
