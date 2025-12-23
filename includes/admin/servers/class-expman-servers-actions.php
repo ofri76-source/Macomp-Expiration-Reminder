@@ -96,6 +96,7 @@ class Expman_Servers_Actions {
         $ship_date             = $this->sanitize_date_value( sanitize_text_field( wp_unslash( $_POST['ship_date'] ?? '' ) ) );
         $ending_on             = $this->sanitize_date_value( sanitize_text_field( wp_unslash( $_POST['ending_on'] ?? '' ) ) );
         $last_renewal_date     = $this->sanitize_date_value( sanitize_text_field( wp_unslash( $_POST['last_renewal_date'] ?? '' ) ) );
+        $operating_system      = sanitize_text_field( wp_unslash( $_POST['operating_system'] ?? '' ) );
         $service_level         = sanitize_text_field( wp_unslash( $_POST['service_level'] ?? '' ) );
         $server_model          = sanitize_text_field( wp_unslash( $_POST['server_model'] ?? '' ) );
 
@@ -150,6 +151,7 @@ class Expman_Servers_Actions {
             'ship_date'                => $ship_date,
             'ending_on'                => $ending_on,
             'last_renewal_date'        => $last_renewal_date,
+            'operating_system'         => $operating_system !== '' ? $operating_system : null,
             'service_level'            => $service_level !== '' ? $service_level : null,
             'server_model'             => $server_model !== '' ? $server_model : null,
             'notes'                    => $notes,
@@ -184,6 +186,7 @@ class Expman_Servers_Actions {
                     array( 'label' => 'Ship Date', 'from' => $prev['ship_date'] ?? '', 'to' => $ship_date ),
                     array( 'label' => 'Ending On', 'from' => $prev['ending_on'] ?? '', 'to' => $ending_on ),
                     array( 'label' => 'תאריך חידוש אחרון', 'from' => $prev['last_renewal_date'] ?? '', 'to' => $last_renewal_date ),
+                    array( 'label' => 'מערכת הפעלה', 'from' => $prev['operating_system'] ?? '', 'to' => $operating_system ),
                     array( 'label' => 'סוג שירות', 'from' => $prev['service_level'] ?? '', 'to' => $service_level ),
                     array( 'label' => 'דגם שרת', 'from' => $prev['server_model'] ?? '', 'to' => $server_model ),
                     array( 'label' => 'הערות', 'from' => $prev['notes'] ?? '', 'to' => $notes ),
@@ -607,6 +610,7 @@ class Expman_Servers_Actions {
         $customer_number = sanitize_text_field( wp_unslash( $_POST['customer_number'] ?? $stage['customer_number'] ?? '' ) );
         $customer_name = sanitize_text_field( wp_unslash( $_POST['customer_name'] ?? $stage['customer_name'] ?? '' ) );
         $service_tag = strtoupper( sanitize_text_field( wp_unslash( $_POST['service_tag'] ?? $stage['service_tag'] ?? '' ) ) );
+        $operating_system = sanitize_text_field( wp_unslash( $_POST['operating_system'] ?? '' ) );
         $last_renewal_date = null;
         $last_renewal_date_raw = sanitize_text_field( wp_unslash( $_POST['last_renewal_date'] ?? $stage['last_renewal_date'] ?? '' ) );
         if ( $last_renewal_date_raw !== '' ) {
@@ -632,6 +636,7 @@ class Expman_Servers_Actions {
             'customer_name_snapshot'   => $customer_name !== '' ? $customer_name : null,
             'service_tag'              => $service_tag,
             'last_renewal_date'        => $last_renewal_date,
+            'operating_system'         => $operating_system !== '' ? $operating_system : null,
             'notes'                    => $notes,
             'created_at'               => current_time( 'mysql' ),
             'updated_at'               => current_time( 'mysql' ),
@@ -709,6 +714,7 @@ class Expman_Servers_Actions {
                 'Ship Date',
                 'Ending On',
                 'תאריך חידוש אחרון',
+                'מערכת הפעלה',
                 'סוג שירות',
                 'דגם שרת',
                 'הודעה זמנית פעילה',
@@ -734,6 +740,7 @@ class Expman_Servers_Actions {
                     $row['ship_date'] ?? '',
                     $row['ending_on'] ?? '',
                     $row['last_renewal_date'] ?? '',
+                    $row['operating_system'] ?? '',
                     $row['service_level'] ?? '',
                     $row['server_model'] ?? '',
                     ! empty( $row['temp_notice_enabled'] ) ? 'כן' : 'לא',

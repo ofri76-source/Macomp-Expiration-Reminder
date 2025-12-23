@@ -55,9 +55,9 @@ class Expman_Servers_Importer {
             }
 
             $col = array_pad( $data, 5, '' );
-            $service_tag = trim( (string) $this->get_value( $data, $header_map, array( 'service_tag', 'service tag', 'tag' ), $col[0] ) );
-            $customer_number = trim( (string) $this->get_value( $data, $header_map, array( 'customer_number', 'customer number' ), $col[1] ) );
-            $customer_name = trim( (string) $this->get_value( $data, $header_map, array( 'customer_name', 'customer name' ), $col[2] ) );
+            $service_tag = trim( (string) $this->get_value( $data, $header_map, array( 'service_tag', 'service tag', 'tag', 'Service Tag' ), $col[0] ) );
+            $customer_number = trim( (string) $this->get_value( $data, $header_map, array( 'customer_number', 'customer number', 'מספר לקוח' ), $col[1] ) );
+            $customer_name = trim( (string) $this->get_value( $data, $header_map, array( 'customer_name', 'customer name', 'שם לקוח' ), $col[2] ) );
             $last_renewal = trim( (string) $this->get_value( $data, $header_map, array( 'last_renewal_date', 'last renewal date', 'תאריך חידוש אחרון', 'תאריך חידוש' ), $col[3] ) );
             $notes = trim( (string) $this->get_value( $data, $header_map, array( 'notes', 'note', 'הערות' ), $col[4] ) );
 
@@ -293,6 +293,7 @@ class Expman_Servers_Importer {
             $ship_date = $this->sanitize_date( $this->get_value( $data, $header_map, array( 'ship date', 'ship_date' ), '' ) );
             $ending_on = $this->sanitize_date( $this->get_value( $data, $header_map, array( 'ending on', 'ending_on' ), '' ) );
             $last_renewal_date = $this->sanitize_date( $this->get_value( $data, $header_map, array( 'תאריך חידוש אחרון', 'last renewal date', 'last_renewal_date' ), '' ) );
+            $operating_system = trim( (string) $this->get_value( $data, $header_map, array( 'מערכת הפעלה', 'operating system', 'operating_system' ), '' ) );
             $service_level = trim( (string) $this->get_value( $data, $header_map, array( 'סוג שירות', 'service level', 'service_level' ), '' ) );
             $server_model = trim( (string) $this->get_value( $data, $header_map, array( 'דגם שרת', 'server model', 'server_model' ), '' ) );
             $temp_notice_enabled = $this->parse_bool( $this->get_value( $data, $header_map, array( 'הודעה זמנית פעילה', 'temp notice enabled', 'temp_notice_enabled' ), '' ) );
@@ -315,6 +316,7 @@ class Expman_Servers_Importer {
                 'ship_date'                => $ship_date,
                 'ending_on'                => $ending_on,
                 'last_renewal_date'        => $last_renewal_date,
+                'operating_system'         => $operating_system !== '' ? $operating_system : null,
                 'service_level'            => $service_level !== '' ? $service_level : null,
                 'server_model'             => $server_model !== '' ? $server_model : null,
                 'temp_notice_enabled'      => $temp_notice_enabled,
