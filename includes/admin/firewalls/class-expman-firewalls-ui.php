@@ -507,11 +507,15 @@ class Expman_Firewalls_UI {
               results.innerHTML="";
               const wrap=document.createElement("div");
               wrap.style.position="absolute";
+              wrap.style.right="0";
+              wrap.style.left="0";
+              wrap.style.top="0";
               wrap.style.background="#fff";
               wrap.style.border="1px solid #ddd";
               wrap.style.borderRadius="6px";
               wrap.style.zIndex="999";
-              wrap.style.minWidth="220px";
+              wrap.style.maxHeight="240px";
+              wrap.style.overflow="auto";
               items.forEach(function(it){
                 const btn=document.createElement("button");
                 btn.type="button";
@@ -531,6 +535,10 @@ class Expman_Firewalls_UI {
               });
               results.appendChild(wrap);
             });
+          });
+          document.addEventListener("keydown",function(e){
+            if(!e.target.classList.contains("expman-customer-search")) return;
+            if(e.key === "Enter"){ e.preventDefault(); }
           });
           document.addEventListener("click",function(e){
             if(e.target.classList.contains("expman-customer-search")) return;

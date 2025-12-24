@@ -20,11 +20,85 @@ class Expman_Generic_Items_Page {
         echo '<div class="wrap">';
         if ( class_exists('Expman_Nav') ) { Expman_Nav::render_admin_nav( '0.2.0' ); }
         echo '<h1>' . esc_html( $this->title ) . '</h1>';
+        $this->render_summary_cards();
         echo '<h2>רשימה</h2>';
         $this->render_items_table();
         echo '<hr><h2>הוספה / עריכה</h2>';
         $this->render_item_form();
         echo '</div>';
+    }
+
+    private function get_thresholds() {
+        $settings = get_option( $this->option_key, array() );
+        return array(
+            'yellow' => intval( $settings['yellow_threshold'] ?? 90 ),
+            'red'    => intval( $settings['red_threshold'] ?? 30 ),
+        );
+    }
+
+    private function render_summary_cards() {
+        static $summary_css_done = false;
+        if ( ! $summary_css_done ) {
+            echo '<style>
+            .expman-summary{display:flex;gap:12px;flex-wrap:wrap;align-items:stretch;margin:14px 0;}
+            .expman-summary-card{flex:1 1 160px;border-radius:12px;padding:10px 12px;border:1px solid #d9e3f2;background:#fff;min-width:160px;cursor:pointer;text-align:right;}
+            .expman-summary-card button{all:unset;cursor:pointer;display:block;width:100%;}
+            .expman-summary-card h4{margin:0 0 6px;font-size:14px;color:#2b3f5c;}
+            .expman-summary-card .count{display:inline-flex;align-items:center;justify-content:center;min-width:36px;padding:4px 10px;border-radius:999px;font-size:18px;font-weight:700;color:#183153;background:rgba(24,49,83,0.08);}
+            .expman-summary-card.green{background:#ecfbf4;border-color:#bfead4;}
+            .expman-summary-card.yellow{background:#fff4e7;border-color:#ffd3a6;}
+            .expman-summary-card.red{background:#ffecec;border-color:#f3b6b6;}
+            .expman-summary-card.green .count{background:#c9f1dd;color:#1b5a39;}
+            .expman-summary-card.yellow .count{background:#ffe2c6;color:#7a4c11;}
+            .expman-summary-card.red .count{background:#ffd1d1;color:#7a1f1f;}
+            .expman-summary-card[data-active="1"]{box-shadow:0 0 0 2px rgba(47,94,168,0.18);}
+            .expman-summary-meta{margin-top:8px;padding:8px 12px;border-radius:10px;border:1px solid #d9e3f2;background:#f8fafc;font-weight:600;color:#2b3f5c;}
+            .expman-summary-meta button{all:unset;cursor:pointer;}
+            </style>';
+            $summary_css_done = true;
+        }
+
+        $summary = $this->get_summary_counts();
+        $yellow_label = 'תוקף בין ' . ( $summary['red_threshold'] + 1 ) . ' ל-' . $summary['yellow_threshold'] . ' יום';
+        echo '<div class="expman-summary">';
+        echo '<div class="expman-summary-card green" data-expman-status="green"><button type="button"><h4>תוקף מעל ' . esc_html( $summary['yellow_threshold'] ) . ' יום</h4><div class="count">' . esc_html( $summary['green'] ) . '</div></button></div>';
+        echo '<div class="expman-summary-card yellow" data-expman-status="yellow"><button type="button"><h4>' . esc_html( $yellow_label ) . '</h4><div class="count">' . esc_html( $summary['yellow'] ) . '</div></button></div>';
+        echo '<div class="expman-summary-card red" data-expman-status="red"><button type="button"><h4>דורש טיפול מייד</h4><div class="count">' . esc_html( $summary['red'] ) . '</div></button></div>';
+        echo '</div>';
+        echo '<div class="expman-summary-meta" data-expman-status="all"><button type="button">סה״כ רשומות פעילות: ' . esc_html( $summary['total'] ) . '</button></div>';
+    }
+
+    private function get_summary_counts() {
+        global $wpdb;
+        $table = $wpdb->prefix . 'exp_items';
+        $thresholds = $this->get_thresholds();
+
+        $counts = $wpdb->get_row(
+            $wpdb->prepare(
+                "SELECT
+                    SUM(CASE WHEN expiry_date IS NOT NULL AND DATEDIFF(expiry_date, CURDATE()) > %d THEN 1 ELSE 0 END) AS green_count,
+                    SUM(CASE WHEN expiry_date IS NOT NULL AND DATEDIFF(expiry_date, CURDATE()) BETWEEN %d AND %d THEN 1 ELSE 0 END) AS yellow_count,
+                    SUM(CASE WHEN expiry_date IS NOT NULL AND DATEDIFF(expiry_date, CURDATE()) <= %d THEN 1 ELSE 0 END) AS red_count,
+                    COUNT(*) AS total_count
+                 FROM {$table}
+                 WHERE type = %s AND deleted_at IS NULL",
+                $thresholds['yellow'],
+                $thresholds['red'] + 1,
+                $thresholds['yellow'],
+                $thresholds['red'],
+                $this->type
+            ),
+            ARRAY_A
+        );
+
+        return array(
+            'green' => intval( $counts['green_count'] ?? 0 ),
+            'yellow' => intval( $counts['yellow_count'] ?? 0 ),
+            'red' => intval( $counts['red_count'] ?? 0 ),
+            'total' => intval( $counts['total_count'] ?? 0 ),
+            'yellow_threshold' => $thresholds['yellow'],
+            'red_threshold' => $thresholds['red'],
+        );
     }
 
     private function handle_actions( $action ) {
@@ -45,6 +119,7 @@ class Expman_Generic_Items_Page {
     private function render_items_table() {
         global $wpdb;
         $table = $wpdb->prefix . 'exp_items';
+        $thresholds = $this->get_thresholds();
 
         $items = $wpdb->get_results(
             $wpdb->prepare(
@@ -53,7 +128,7 @@ class Expman_Generic_Items_Page {
             )
         );
 
-        echo '<table class="widefat striped"><thead><tr>';
+        echo '<table class="widefat striped" id="expman-items-table"><thead><tr>';
         echo '<th>ID</th><th>Customer ID</th><th>Name</th><th>Identifier</th><th>Expiry</th><th>IP</th><th>Notes</th><th>Actions</th>';
         echo '</tr></thead><tbody>';
 
@@ -76,7 +151,22 @@ class Expman_Generic_Items_Page {
                 'expman_delete_' . $item->id
             );
 
-            echo '<tr>';
+            $days = null;
+            if ( ! empty( $item->expiry_date ) ) {
+                $days = (int) ( ( strtotime( (string) $item->expiry_date ) - strtotime( gmdate( 'Y-m-d' ) ) ) / DAY_IN_SECONDS );
+            }
+            $status = 'unknown';
+            if ( $days !== null ) {
+                if ( $days <= $thresholds['red'] ) {
+                    $status = 'red';
+                } elseif ( $days <= $thresholds['yellow'] ) {
+                    $status = 'yellow';
+                } else {
+                    $status = 'green';
+                }
+            }
+
+            echo '<tr data-expman-status="' . esc_attr( $status ) . '">';
             echo '<td>' . esc_html( $item->id ) . '</td>';
             echo '<td>' . esc_html( $item->customer_id ) . '</td>';
             echo '<td>' . esc_html( $item->name ) . '</td>';
@@ -94,6 +184,30 @@ class Expman_Generic_Items_Page {
         }
 
         echo '</tbody></table>';
+
+        echo '<script>
+        (function(){
+            function setActiveSummary(status){
+                document.querySelectorAll(".expman-summary-card, .expman-summary-meta").forEach(function(card){
+                    card.setAttribute("data-active", card.getAttribute("data-expman-status") === status ? "1" : "0");
+                });
+            }
+            function applyStatusFilter(status){
+                document.querySelectorAll("#expman-items-table tbody tr").forEach(function(row){
+                    var rowStatus = row.getAttribute("data-expman-status") || "";
+                    row.style.display = (status === "all" || rowStatus === status) ? "" : "none";
+                });
+            }
+            document.querySelectorAll(".expman-summary-card, .expman-summary-meta").forEach(function(card){
+                card.addEventListener("click", function(){
+                    var status = card.getAttribute("data-expman-status") || "all";
+                    setActiveSummary(status);
+                    applyStatusFilter(status);
+                });
+            });
+            setActiveSummary("all");
+        })();
+        </script>';
     }
 
     private function render_item_form() {
