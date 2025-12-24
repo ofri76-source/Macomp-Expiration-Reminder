@@ -141,7 +141,9 @@ class Expman_Servers_Page {
             'empty_trash'                => array( 'expman_empty_servers_trash', 'expman_empty_servers_trash_nonce' ),
             'import_csv'                 => array( 'expman_import_servers_csv', 'expman_import_servers_csv_nonce' ),
             'import_excel_settings'      => array( 'expman_import_servers_excel', 'expman_import_servers_excel_nonce' ),
+            'import_csv_direct'          => array( 'expman_import_servers_direct', 'expman_import_servers_direct_nonce' ),
             'assign_import_stage'        => array( 'expman_assign_servers_stage', 'expman_assign_servers_stage_nonce' ),
+            'assign_import_stage_bulk'   => array( 'expman_assign_servers_stage_bulk', 'expman_assign_servers_stage_bulk_nonce' ),
             'delete_import_stage'        => array( 'expman_delete_servers_stage', 'expman_delete_servers_stage_nonce' ),
             'empty_import_stage'         => array( 'expman_empty_servers_stage', 'expman_empty_servers_stage_nonce' ),
             'save_dell_settings'         => array( 'expman_save_dell_settings', 'expman_save_dell_settings_nonce' ),
@@ -199,8 +201,18 @@ class Expman_Servers_Page {
                 $redirect_tab = 'settings';
                 break;
 
+            case 'import_csv_direct':
+                $this->actions->action_import_csv_direct();
+                $redirect_tab = 'settings';
+                break;
+
             case 'assign_import_stage':
                 $this->actions->action_assign_import_stage();
+                $redirect_tab = 'assign';
+                break;
+
+            case 'assign_import_stage_bulk':
+                $this->actions->action_assign_import_stage_bulk();
                 $redirect_tab = 'assign';
                 break;
 

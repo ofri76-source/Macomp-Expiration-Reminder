@@ -4,6 +4,45 @@ if ( ! defined( 'ABSPATH' ) ) { exit; }
 if ( ! class_exists( 'DRM_Manager' ) ) {
 class DRM_Manager {
 
+    private function get_thresholds() {
+        $settings = get_option( Expiry_Manager_Plugin::OPTION_KEY, array() );
+        return array(
+            'yellow' => intval( $settings['yellow_threshold'] ?? 90 ),
+            'red'    => intval( $settings['red_threshold'] ?? 30 ),
+        );
+    }
+
+    private function render_summary_cards( $data ) {
+        static $summary_css_done = false;
+        if ( ! $summary_css_done ) {
+            echo '<style>
+            .expman-summary{display:flex;gap:12px;flex-wrap:wrap;align-items:stretch;margin:14px 0;}
+            .expman-summary-card{flex:1 1 160px;border-radius:12px;padding:10px 12px;border:1px solid #d9e3f2;background:#fff;min-width:160px;cursor:pointer;text-align:right;}
+            .expman-summary-card button{all:unset;cursor:pointer;display:block;width:100%;}
+            .expman-summary-card h4{margin:0 0 6px;font-size:14px;color:#2b3f5c;}
+            .expman-summary-card .count{display:inline-flex;align-items:center;justify-content:center;min-width:36px;padding:4px 10px;border-radius:999px;font-size:18px;font-weight:700;color:#183153;background:rgba(24,49,83,0.08);}
+            .expman-summary-card.green{background:#ecfbf4;border-color:#bfead4;}
+            .expman-summary-card.yellow{background:#fff4e7;border-color:#ffd3a6;}
+            .expman-summary-card.red{background:#ffecec;border-color:#f3b6b6;}
+            .expman-summary-card.green .count{background:#c9f1dd;color:#1b5a39;}
+            .expman-summary-card.yellow .count{background:#ffe2c6;color:#7a4c11;}
+            .expman-summary-card.red .count{background:#ffd1d1;color:#7a1f1f;}
+            .expman-summary-card[data-active="1"]{box-shadow:0 0 0 2px rgba(47,94,168,0.18);}
+            .expman-summary-meta{margin-top:8px;padding:8px 12px;border-radius:10px;border:1px solid #d9e3f2;background:#f8fafc;font-weight:600;color:#2b3f5c;}
+            .expman-summary-meta button{all:unset;cursor:pointer;}
+            </style>';
+            $summary_css_done = true;
+        }
+
+        $yellow_label = 'תוקף בין ' . ( $data['red_threshold'] + 1 ) . ' ל-' . $data['yellow_threshold'] . ' יום';
+        echo '<div class="expman-summary">';
+        echo '<div class="expman-summary-card green" data-expman-status="green"><button type="button"><h4>תוקף מעל ' . esc_html( $data['yellow_threshold'] ) . ' יום</h4><div class="count">' . esc_html( $data['green'] ) . '</div></button></div>';
+        echo '<div class="expman-summary-card yellow" data-expman-status="yellow"><button type="button"><h4>' . esc_html( $yellow_label ) . '</h4><div class="count">' . esc_html( $data['yellow'] ) . '</div></button></div>';
+        echo '<div class="expman-summary-card red" data-expman-status="red"><button type="button"><h4>דורש טיפול מייד</h4><div class="count">' . esc_html( $data['red'] ) . '</div></button></div>';
+        echo '</div>';
+        echo '<div class="expman-summary-meta" data-expman-status="all"><button type="button">סה״כ רשומות פעילות: ' . esc_html( $data['total'] ) . '</button></div>';
+    }
+
     private function normalize_ui_date_to_db( $value ) {
         $value = trim( (string) $value );
         if ( $value === '' ) { return ''; }
@@ -113,6 +152,7 @@ class DRM_Manager {
         );
 
         $rows = $this->get_rows( $filters, $orderby, $order, $mode );
+        $summary = $this->get_summary_counts( $mode );
 
         $base = remove_query_arg( array( 'orderby', 'order' ) );
         $clear_url = remove_query_arg(
@@ -162,6 +202,9 @@ class DRM_Manager {
 
         echo '<div class="expman-domains-wrap expman-frontend expman-domains" style="direction:rtl;">';
         echo '<h2 style="margin-top:10px;">דומיינים</h2>';
+        if ( $mode === 'main' ) {
+            $this->render_summary_cards( $summary );
+        }
 
         if ( $mode === 'main' ) {
             echo '<div style="display:flex;gap:10px;align-items:center;justify-content:flex-end;margin:10px 0;">';
@@ -260,6 +303,35 @@ class DRM_Manager {
                 });
             }
 
+            function setActiveSummary(status){
+                wrap.querySelectorAll(".expman-summary-card, .expman-summary-meta").forEach(function(card){
+                    card.setAttribute("data-active", card.getAttribute("data-expman-status") === status ? "1" : "0");
+                });
+            }
+
+            function applyStatusFilter(status){
+                wrap.querySelectorAll("tr.expman-row").forEach(function(row){
+                    var rowStatus = row.getAttribute("data-expman-status") || "";
+                    var show = (status === "all") || (rowStatus === status);
+                    row.style.display = show ? "" : "none";
+                    var id = row.getAttribute("data-id");
+                    if(id){
+                        var detail = wrap.querySelector("tr.expman-details[data-for=\'" + id + "\']");
+                        var edit = wrap.querySelector("tr.expman-edit[data-for=\'" + id + "\']");
+                        if(detail) detail.style.display = "none";
+                        if(edit) edit.style.display = "none";
+                    }
+                });
+            }
+
+            wrap.querySelectorAll(".expman-summary-card, .expman-summary-meta").forEach(function(card){
+                card.addEventListener("click", function(){
+                    var status = card.getAttribute("data-expman-status") || "all";
+                    setActiveSummary(status);
+                    applyStatusFilter(status);
+                });
+            });
+
             function wireEditButtons(scope){
                 scope.querySelectorAll(".expman-toggle-edit").forEach(function(btn){
                     btn.addEventListener("click", function(e){
@@ -295,14 +367,15 @@ class DRM_Manager {
                     data.append("mode", mode || "main");
                     fetch(ajax, { method:"POST", body:data })
                         .then(r=>r.json())
-                        .then(function(res){
-                            if(!res || !res.success){return;}
-                            body.innerHTML = res.data.html || "";
-                            wireRowClicks(body);
-                            wireEditButtons(body);
-                        })
-                        .catch(()=>{});
-                };
+                    .then(function(res){
+                        if(!res || !res.success){return;}
+                        body.innerHTML = res.data.html || "";
+                        wireRowClicks(body);
+                        wireEditButtons(body);
+                        applyStatusFilter("all");
+                    })
+                    .catch(()=>{});
+            };
 
                 form.addEventListener("submit", function(e){
                     e.preventDefault();
@@ -324,6 +397,7 @@ class DRM_Manager {
 
             wireRowClicks(wrap);
             wireEditButtons(wrap);
+            setActiveSummary("all");
         })();
         </script>';
 
@@ -617,7 +691,8 @@ class DRM_Manager {
             }
 
             $row_class = $row_index % 2 === 0 ? 'expman-row-alt' : '';
-            $html .= '<tr class="expman-row ' . esc_attr( $row_class ) . '" data-id="' . esc_attr( $row_id ) . '">';
+            $status_attr = str_replace( 'expman-days-', '', $days_class );
+            $html .= '<tr class="expman-row ' . esc_attr( $row_class ) . '" data-id="' . esc_attr( $row_id ) . '" data-expman-status="' . esc_attr( $status_attr ) . '">';
             $html .= '<td>' . esc_html( $row['client_name'] ?? '' ) . '</td>';
             $html .= '<td>' . esc_html( $row['customer_number'] ?? '' ) . '</td>';
             $html .= '<td>' . esc_html( $row['customer_name'] ?? '' ) . '</td>';
@@ -650,6 +725,45 @@ class DRM_Manager {
         }
 
         return $html;
+    }
+
+    private function get_summary_counts( $mode ) {
+        $this->ensure_customer_columns();
+        global $wpdb;
+        $table = $wpdb->prefix . 'kb_kb_domain_expiry';
+        $thresholds = $this->get_thresholds();
+
+        $where = array( 'deleted_at IS NULL' );
+        if ( $mode === 'trash' ) {
+            $where = array( 'deleted_at IS NOT NULL' );
+        }
+
+        $where_sql = 'WHERE ' . implode( ' AND ', $where );
+        $counts = $wpdb->get_row(
+            $wpdb->prepare(
+                "SELECT
+                    SUM(CASE WHEN expiry_date IS NOT NULL AND DATEDIFF(expiry_date, CURDATE()) > %d THEN 1 ELSE 0 END) AS green_count,
+                    SUM(CASE WHEN expiry_date IS NOT NULL AND DATEDIFF(expiry_date, CURDATE()) BETWEEN %d AND %d THEN 1 ELSE 0 END) AS yellow_count,
+                    SUM(CASE WHEN expiry_date IS NOT NULL AND DATEDIFF(expiry_date, CURDATE()) <= %d THEN 1 ELSE 0 END) AS red_count,
+                    COUNT(*) AS total_count
+                 FROM {$table}
+                 {$where_sql}",
+                $thresholds['yellow'],
+                $thresholds['red'] + 1,
+                $thresholds['yellow'],
+                $thresholds['red']
+            ),
+            ARRAY_A
+        );
+
+        return array(
+            'green' => intval( $counts['green_count'] ?? 0 ),
+            'yellow' => intval( $counts['yellow_count'] ?? 0 ),
+            'red' => intval( $counts['red_count'] ?? 0 ),
+            'total' => intval( $counts['total_count'] ?? 0 ),
+            'yellow_threshold' => $thresholds['yellow'],
+            'red_threshold' => $thresholds['red'],
+        );
     }
 
     public function handle_fetch() {
