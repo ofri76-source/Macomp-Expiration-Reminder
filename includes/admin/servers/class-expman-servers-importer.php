@@ -58,7 +58,7 @@ class Expman_Servers_Importer {
             $customer_number = trim( (string) $this->get_value( $data, $header_map, array( 'customer_number', 'customer number', 'מספר לקוח' ), $col[0] ) );
             $customer_name = trim( (string) $this->get_value( $data, $header_map, array( 'customer_name', 'customer name', 'שם לקוח' ), $col[1] ) );
             $service_tag = trim( (string) $this->get_value( $data, $header_map, array( 'service_tag', 'service tag', 'tag', 'Service Tag' ), $col[2] ) );
-            $last_renewal = trim( (string) $this->get_value( $data, $header_map, array( 'last_renewal_date', 'last renewal date', 'תאריך חידוש אחרון', 'תאריך חידוש' ), $col[3] ) );
+            $ending_on = trim( (string) $this->get_value( $data, $header_map, array( 'ending on', 'ending_on', 'ending on', 'תאריך סיום' ), $col[3] ) );
             $notes = trim( (string) $this->get_value( $data, $header_map, array( 'notes', 'note', 'הערות' ), $col[4] ) );
 
             if ( $service_tag === '' ) {
@@ -68,7 +68,7 @@ class Expman_Servers_Importer {
             }
 
             $service_tag = strtoupper( $service_tag );
-            $last_renewal_date = $this->sanitize_date( $last_renewal );
+            $ending_on_date = $this->sanitize_date( $ending_on );
 
             $exists = $wpdb->get_var(
                 $wpdb->prepare(
@@ -102,7 +102,7 @@ class Expman_Servers_Importer {
                     'customer_number' => $customer_number !== '' ? $customer_number : null,
                     'customer_name'   => $customer_name !== '' ? $customer_name : null,
                     'service_tag'     => $service_tag,
-                    'last_renewal_date' => $last_renewal_date,
+                    'ending_on'       => $ending_on_date,
                     'notes'           => $notes !== '' ? $notes : null,
                     'created_at'      => current_time( 'mysql' ),
                 ),
@@ -297,10 +297,10 @@ class Expman_Servers_Importer {
             $express_service_code = trim( (string) $this->get_value( $data, $header_map, array( 'express service code', 'express_service_code' ), '' ) );
             $ship_date = $this->sanitize_date( $this->get_value( $data, $header_map, array( 'ship date', 'ship_date' ), '' ) );
             $ending_on = $this->sanitize_date( $this->get_value( $data, $header_map, array( 'ending on', 'ending_on' ), '' ) );
-            $last_renewal_date = $this->sanitize_date( $this->get_value( $data, $header_map, array( 'תאריך חידוש אחרון', 'last renewal date', 'last_renewal_date' ), '' ) );
             $operating_system = trim( (string) $this->get_value( $data, $header_map, array( 'מערכת הפעלה', 'operating system', 'operating_system' ), '' ) );
             $service_level = trim( (string) $this->get_value( $data, $header_map, array( 'סוג שירות', 'service level', 'service_level' ), '' ) );
             $server_model = trim( (string) $this->get_value( $data, $header_map, array( 'דגם שרת', 'server model', 'server_model' ), '' ) );
+            $track_only = $this->parse_bool( $this->get_value( $data, $header_map, array( 'שרת במעקב', 'track only', 'track_only' ), '' ) );
             $temp_notice_enabled = $this->parse_bool( $this->get_value( $data, $header_map, array( 'הודעה זמנית פעילה', 'temp notice enabled', 'temp_notice_enabled' ), '' ) );
             $temp_notice_text = trim( (string) $this->get_value( $data, $header_map, array( 'טקסט הודעה זמנית', 'temp notice text', 'temp_notice_text' ), '' ) );
             $notes = trim( (string) $this->get_value( $data, $header_map, array( 'הערות', 'notes', 'note' ), '' ) );
@@ -320,10 +320,10 @@ class Expman_Servers_Importer {
                 'express_service_code'     => $express_service_code !== '' ? $express_service_code : null,
                 'ship_date'                => $ship_date,
                 'ending_on'                => $ending_on,
-                'last_renewal_date'        => $last_renewal_date,
                 'operating_system'         => $operating_system !== '' ? $operating_system : null,
                 'service_level'            => $service_level !== '' ? $service_level : null,
                 'server_model'             => $server_model !== '' ? $server_model : null,
+                'track_only'               => $track_only,
                 'temp_notice_enabled'      => $temp_notice_enabled,
                 'temp_notice_text'         => $temp_notice_text !== '' ? $temp_notice_text : null,
                 'notes'                    => $notes !== '' ? $notes : null,

@@ -93,10 +93,10 @@ class Expman_Servers_Actions {
         $express_service_code  = sanitize_text_field( wp_unslash( $_POST['express_service_code'] ?? '' ) );
         $ship_date             = $this->sanitize_date_value( sanitize_text_field( wp_unslash( $_POST['ship_date'] ?? '' ) ) );
         $ending_on             = $this->sanitize_date_value( sanitize_text_field( wp_unslash( $_POST['ending_on'] ?? '' ) ) );
-        $last_renewal_date     = $this->sanitize_date_value( sanitize_text_field( wp_unslash( $_POST['last_renewal_date'] ?? '' ) ) );
         $operating_system      = sanitize_text_field( wp_unslash( $_POST['operating_system'] ?? '' ) );
         $service_level         = sanitize_text_field( wp_unslash( $_POST['service_level'] ?? '' ) );
         $server_model          = sanitize_text_field( wp_unslash( $_POST['server_model'] ?? '' ) );
+        $track_only            = isset( $_POST['track_only'] ) ? 1 : 0;
 
         $notes        = wp_kses_post( wp_unslash( $_POST['notes'] ?? '' ) );
         $temp_enabled = isset( $_POST['temp_notice_enabled'] ) ? 1 : 0;
@@ -148,13 +148,13 @@ class Expman_Servers_Actions {
             'express_service_code'     => $express_service_code !== '' ? $express_service_code : null,
             'ship_date'                => $ship_date,
             'ending_on'                => $ending_on,
-            'last_renewal_date'        => $last_renewal_date,
             'operating_system'         => $operating_system !== '' ? $operating_system : null,
             'service_level'            => $service_level !== '' ? $service_level : null,
             'server_model'             => $server_model !== '' ? $server_model : null,
             'notes'                    => $notes,
             'temp_notice_enabled'      => $temp_enabled,
             'temp_notice_text'         => $temp_notice,
+            'track_only'               => $track_only,
             'updated_at'               => current_time( 'mysql' ),
         );
 
@@ -183,10 +183,10 @@ class Expman_Servers_Actions {
                     array( 'label' => 'Express Service Code', 'from' => $prev['express_service_code'] ?? '', 'to' => $express_service_code ),
                     array( 'label' => 'Ship Date', 'from' => $prev['ship_date'] ?? '', 'to' => $ship_date ),
                     array( 'label' => 'Ending On', 'from' => $prev['ending_on'] ?? '', 'to' => $ending_on ),
-                    array( 'label' => 'תאריך חידוש אחרון', 'from' => $prev['last_renewal_date'] ?? '', 'to' => $last_renewal_date ),
                     array( 'label' => 'מערכת הפעלה', 'from' => $prev['operating_system'] ?? '', 'to' => $operating_system ),
                     array( 'label' => 'סוג שירות', 'from' => $prev['service_level'] ?? '', 'to' => $service_level ),
                     array( 'label' => 'דגם שרת', 'from' => $prev['server_model'] ?? '', 'to' => $server_model ),
+                    array( 'label' => 'שרת במעקב', 'from' => (string) ( $prev['track_only'] ?? 0 ), 'to' => (string) $track_only ),
                     array( 'label' => 'הערות', 'from' => $prev['notes'] ?? '', 'to' => $notes ),
                     array( 'label' => 'הודעה זמנית', 'from' => (string) ( $prev['temp_notice_enabled'] ?? 0 ), 'to' => (string) $temp_enabled ),
                     array( 'label' => 'טקסט הודעה זמנית', 'from' => $prev['temp_notice_text'] ?? '', 'to' => $temp_notice ),
@@ -313,7 +313,7 @@ class Expman_Servers_Actions {
         return 'green';
     }
 
-    public function get_servers_rows( $filters = array(), $orderby = 'ending_on', $order = 'ASC', $include_deleted = false, $limit = 0, $offset = 0 ) {
+    public function get_servers_rows( $filters = array(), $orderby = 'ending_on', $order = 'ASC', $include_deleted = false, $limit = 0, $offset = 0, $track_only = null ) {
         global $wpdb;
         $servers_table = $wpdb->prefix . Expman_Servers_Page::TABLE_SERVERS;
 
@@ -322,6 +322,10 @@ class Expman_Servers_Actions {
 
         if ( ! $include_deleted ) {
             $where[] = 'deleted_at IS NULL';
+        }
+        if ( $track_only !== null ) {
+            $where[] = 'track_only = %d';
+            $params[] = intval( $track_only ) ? 1 : 0;
         }
 
         if ( ! empty( $filters['customer_number'] ) ) {
@@ -337,7 +341,7 @@ class Expman_Servers_Actions {
             $params[] = '%' . $wpdb->esc_like( strtoupper( $filters['service_tag'] ) ) . '%';
         }
 
-        $allowed_order = array( 'ending_on', 'service_tag', 'customer_number_snapshot', 'customer_name_snapshot', 'ship_date', 'days_to_end' );
+        $allowed_order = array( 'ending_on', 'service_tag', 'customer_number_snapshot', 'customer_name_snapshot', 'ship_date', 'days_to_end', 'operating_system' );
         if ( ! in_array( $orderby, $allowed_order, true ) ) {
             $orderby = 'ending_on';
         }
@@ -362,7 +366,7 @@ class Expman_Servers_Actions {
         return $wpdb->get_results( $sql );
     }
 
-    public function get_servers_total( $filters = array(), $include_deleted = false ) {
+    public function get_servers_total( $filters = array(), $include_deleted = false, $track_only = null ) {
         global $wpdb;
         $servers_table = $wpdb->prefix . Expman_Servers_Page::TABLE_SERVERS;
 
@@ -371,6 +375,10 @@ class Expman_Servers_Actions {
 
         if ( ! $include_deleted ) {
             $where[] = 'deleted_at IS NULL';
+        }
+        if ( $track_only !== null ) {
+            $where[] = 'track_only = %d';
+            $params[] = intval( $track_only ) ? 1 : 0;
         }
 
         if ( ! empty( $filters['customer_number'] ) ) {
@@ -404,7 +412,7 @@ class Expman_Servers_Actions {
                     SUM(CASE WHEN ending_on IS NOT NULL AND DATEDIFF(ending_on, CURDATE()) <= %d THEN 1 ELSE 0 END) AS red_count,
                     COUNT(*) AS total_count
                  FROM {$servers_table}
-                 WHERE option_key=%s AND deleted_at IS NULL",
+                 WHERE option_key=%s AND deleted_at IS NULL AND track_only=0",
                 $thresholds['yellow'],
                 $thresholds['red'] + 1,
                 $thresholds['yellow'],
@@ -609,11 +617,7 @@ class Expman_Servers_Actions {
         $customer_name = sanitize_text_field( wp_unslash( $_POST['customer_name'] ?? $stage['customer_name'] ?? '' ) );
         $service_tag = strtoupper( sanitize_text_field( wp_unslash( $_POST['service_tag'] ?? $stage['service_tag'] ?? '' ) ) );
         $operating_system = sanitize_text_field( wp_unslash( $_POST['operating_system'] ?? '' ) );
-        $last_renewal_date = null;
-        $last_renewal_date_raw = sanitize_text_field( wp_unslash( $_POST['last_renewal_date'] ?? $stage['last_renewal_date'] ?? '' ) );
-        if ( $last_renewal_date_raw !== '' ) {
-            $last_renewal_date = $this->sanitize_date_value( $last_renewal_date_raw );
-        }
+        $ending_on = $this->sanitize_date_value( sanitize_text_field( wp_unslash( $_POST['ending_on'] ?? $stage['ending_on'] ?? '' ) ) );
         $notes = wp_kses_post( wp_unslash( $_POST['notes'] ?? $stage['notes'] ?? '' ) );
 
         if ( $service_tag === '' ) {
@@ -633,7 +637,7 @@ class Expman_Servers_Actions {
             'customer_number_snapshot' => $customer_number !== '' ? $customer_number : null,
             'customer_name_snapshot'   => $customer_name !== '' ? $customer_name : null,
             'service_tag'              => $service_tag,
-            'last_renewal_date'        => $last_renewal_date,
+            'ending_on'                => $ending_on,
             'operating_system'         => $operating_system !== '' ? $operating_system : null,
             'notes'                    => $notes,
             'created_at'               => current_time( 'mysql' ),
@@ -682,9 +686,9 @@ class Expman_Servers_Actions {
                 continue;
             }
 
-            $last_renewal_date = null;
-            if ( ! empty( $stage['last_renewal_date'] ) ) {
-                $last_renewal_date = $this->sanitize_date_value( $stage['last_renewal_date'] );
+            $ending_on = null;
+            if ( ! empty( $stage['ending_on'] ) ) {
+                $ending_on = $this->sanitize_date_value( $stage['ending_on'] );
             }
 
             $data = array(
@@ -692,7 +696,7 @@ class Expman_Servers_Actions {
                 'customer_number_snapshot' => $customer_number,
                 'customer_name_snapshot'   => $customer_name,
                 'service_tag'              => $service_tag,
-                'last_renewal_date'        => $last_renewal_date,
+                'ending_on'                => $ending_on,
                 'operating_system'         => ! empty( $stage['operating_system'] ) ? sanitize_text_field( $stage['operating_system'] ) : null,
                 'notes'                    => ! empty( $stage['notes'] ) ? wp_kses_post( $stage['notes'] ) : null,
                 'created_at'               => current_time( 'mysql' ),
@@ -771,10 +775,10 @@ class Expman_Servers_Actions {
                 'Express Service Code',
                 'Ship Date',
                 'Ending On',
-                'תאריך חידוש אחרון',
                 'מערכת הפעלה',
                 'סוג שירות',
                 'דגם שרת',
+                'שרת במעקב',
                 'הודעה זמנית פעילה',
                 'טקסט הודעה זמנית',
                 'הערות',
@@ -797,10 +801,10 @@ class Expman_Servers_Actions {
                     $row['express_service_code'] ?? '',
                     $row['ship_date'] ?? '',
                     $row['ending_on'] ?? '',
-                    $row['last_renewal_date'] ?? '',
                     $row['operating_system'] ?? '',
                     $row['service_level'] ?? '',
                     $row['server_model'] ?? '',
+                    ! empty( $row['track_only'] ) ? 'כן' : 'לא',
                     ! empty( $row['temp_notice_enabled'] ) ? 'כן' : 'לא',
                     $row['temp_notice_text'] ?? '',
                     $row['notes'] ?? '',

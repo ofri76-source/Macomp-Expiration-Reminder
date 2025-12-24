@@ -79,7 +79,7 @@ class Expman_Dashboard_Page {
             $servers_actions->set_option_key( $this->option_key );
             $servers_actions->set_dell( new Expman_Servers_Dell( new Expman_Servers_Logger(), $this->option_key, null ) );
             $servers_summary = $servers_actions->get_summary_counts();
-            $servers_rows = $servers_actions->get_servers_rows( array(), 'days_to_end', 'ASC', false );
+            $servers_rows = $servers_actions->get_servers_rows( array(), 'days_to_end', 'ASC', false, 0, 0, 0 );
             $servers_list = array();
             foreach ( (array) $servers_rows as $row ) {
                 $days = isset( $row->days_to_end ) ? intval( $row->days_to_end ) : null;
