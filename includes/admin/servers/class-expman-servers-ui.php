@@ -111,7 +111,7 @@ class Expman_Servers_UI {
         .expman-days-yellow{background:#ffe4b8;color:#7a4c11;}
         .expman-days-red{background:#ffd1d1;color:#7a1f1f;}
         .expman-days-unknown{background:#e2e6eb;color:#2b3f5c;}
-        .expman-row-actions td{background:#f6f8fc;border-bottom:1px solid #e3e7ef;padding:8px;display:none;}
+        .expman-row-actions td{background:#f6f8fc;border-bottom:1px solid #e3e7ef;padding:8px;}
         .expman-row-actions .button{height:28px;line-height:26px;padding:0 10px;}
         .expman-col-customer-num{width:120px;}
         .expman-col-customer-name{width:160px;}
@@ -384,6 +384,7 @@ class Expman_Servers_UI {
     const items = await fetchCustomers(q);
     const box = document.createElement("div");
     box.className = "expman-customer-box";
+    box.style.top = "100%";
 
     items.forEach(it=>{
       const b = document.createElement("button");
@@ -1074,6 +1075,13 @@ JS;
         echo '</form>';
 
         echo '<form method="post" style="margin-bottom:16px;">';
+        wp_nonce_field( 'expman_assign_servers_stage_bulk', 'expman_assign_servers_stage_bulk_nonce' );
+        echo '<input type="hidden" name="expman_action" value="assign_import_stage_bulk">';
+        echo '<input type="hidden" name="tab" value="assign">';
+        echo '<button type="submit" class="button">שיוך לכל הרשומות עם מספר/שם לקוח</button>';
+        echo '</form>';
+
+        echo '<form method="post" style="margin-bottom:16px;">';
         wp_nonce_field( 'expman_empty_servers_stage', 'expman_empty_servers_stage_nonce' );
         echo '<input type="hidden" name="expman_action" value="empty_import_stage">';
         echo '<input type="hidden" name="tab" value="assign">';
@@ -1086,10 +1094,11 @@ JS;
         }
 
         echo '<style>
-        .expman-assign-form{display:flex;gap:8px;align-items:center;flex-wrap:nowrap;}
+        .expman-assign-form{display:flex;gap:8px;align-items:center;flex-wrap:nowrap;position:relative;}
         .expman-assign-form input[type="text"]{height:28px;}
         .expman-assign-form .expman-customer-search{min-width:220px;}
         .expman-assign-field{width:100%;box-sizing:border-box;height:28px;}
+        .expman-assign-form .expman-customer-results{position:relative;z-index:99999;}
         @media (max-width: 900px){ .expman-assign-form{flex-wrap:wrap;} }
         </style>';
 

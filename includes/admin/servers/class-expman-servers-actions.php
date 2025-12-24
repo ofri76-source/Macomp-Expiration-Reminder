@@ -653,6 +653,66 @@ class Expman_Servers_Actions {
         $this->add_notice( 'השורה שויכה ונוצר שרת.' );
     }
 
+    public function action_assign_import_stage_bulk() {
+        global $wpdb;
+        $stage_table = $wpdb->prefix . Expman_Servers_Page::TABLE_SERVER_IMPORT_STAGE;
+        $servers_table = $wpdb->prefix . Expman_Servers_Page::TABLE_SERVERS;
+
+        $rows = $wpdb->get_results(
+            $wpdb->prepare( "SELECT * FROM {$stage_table} WHERE option_key=%s ORDER BY created_at ASC", $this->option_key ),
+            ARRAY_A
+        );
+
+        $assigned = 0;
+        $skipped = 0;
+        foreach ( (array) $rows as $stage ) {
+            $service_tag = strtoupper( sanitize_text_field( $stage['service_tag'] ?? '' ) );
+            $customer_number = sanitize_text_field( $stage['customer_number'] ?? '' );
+            $customer_name = sanitize_text_field( $stage['customer_name'] ?? '' );
+            if ( $service_tag === '' || $customer_number === '' || $customer_name === '' ) {
+                $skipped++;
+                continue;
+            }
+
+            $existing = $wpdb->get_var(
+                $wpdb->prepare( "SELECT id FROM {$servers_table} WHERE service_tag=%s AND deleted_at IS NULL", $service_tag )
+            );
+            if ( $existing ) {
+                $skipped++;
+                continue;
+            }
+
+            $last_renewal_date = null;
+            if ( ! empty( $stage['last_renewal_date'] ) ) {
+                $last_renewal_date = $this->sanitize_date_value( $stage['last_renewal_date'] );
+            }
+
+            $data = array(
+                'option_key'               => $this->option_key,
+                'customer_number_snapshot' => $customer_number,
+                'customer_name_snapshot'   => $customer_name,
+                'service_tag'              => $service_tag,
+                'last_renewal_date'        => $last_renewal_date,
+                'operating_system'         => ! empty( $stage['operating_system'] ) ? sanitize_text_field( $stage['operating_system'] ) : null,
+                'notes'                    => ! empty( $stage['notes'] ) ? wp_kses_post( $stage['notes'] ) : null,
+                'created_at'               => current_time( 'mysql' ),
+                'updated_at'               => current_time( 'mysql' ),
+            );
+
+            $ok = $wpdb->insert( $servers_table, $data );
+            if ( ! $ok ) {
+                $skipped++;
+                continue;
+            }
+
+            $wpdb->delete( $stage_table, array( 'id' => $stage['id'] ) );
+            $assigned++;
+        }
+
+        $this->logger->log_server_event( null, 'assign_bulk', 'שיוך גורף משלב ייבוא', array( 'assigned' => $assigned, 'skipped' => $skipped ), 'info' );
+        $this->add_notice( 'שיוך גורף בוצע. שויכו ' . $assigned . ' רשומות, דולגו ' . $skipped . '.' );
+    }
+
     public function action_delete_import_stage() {
         global $wpdb;
         $stage_table = $wpdb->prefix . Expman_Servers_Page::TABLE_SERVER_IMPORT_STAGE;

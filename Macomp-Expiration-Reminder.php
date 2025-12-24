@@ -43,7 +43,51 @@ class Expiry_Manager_Plugin {
         add_action( 'admin_init', array( $this, 'maybe_install_tables' ) );
         add_action( 'wp_ajax_expman_customer_search', array( $this, 'ajax_customer_search' ) );
         add_action( 'admin_post_expman_server_create', array( $this, 'handle_expman_server_create' ) );
+        add_action( 'admin_footer', array( $this, 'render_required_fields_helper' ) );
 }
+
+    public function render_required_fields_helper() {
+        echo '<style>
+        .expman-required-label::after{content:" *";color:#d63638;font-weight:700;}
+        .expman-required-error{border-color:#d63638 !important;box-shadow:0 0 0 1px #d63638 !important;}
+        </style>';
+        echo '<script>
+        (function(){
+          function markRequiredLabels(){
+            document.querySelectorAll("input[required], select[required], textarea[required]").forEach(function(field){
+              var label = field.closest("div") ? field.closest("div").querySelector("label") : null;
+              if(label){ label.classList.add("expman-required-label"); }
+            });
+          }
+          function validateRequired(form){
+            var ok = true;
+            form.querySelectorAll("input[required], select[required], textarea[required]").forEach(function(field){
+              var empty = !field.value || field.value.trim() === "";
+              if(empty){
+                field.classList.add("expman-required-error");
+                ok = false;
+              } else {
+                field.classList.remove("expman-required-error");
+              }
+            });
+            return ok;
+          }
+          document.addEventListener("input", function(e){
+            if(e.target.matches(".expman-required-error")){
+              if(e.target.value && e.target.value.trim() !== ""){
+                e.target.classList.remove("expman-required-error");
+              }
+            }
+          });
+          document.addEventListener("submit", function(e){
+            var form = e.target;
+            if(!form || !form.querySelectorAll){ return; }
+            if(!validateRequired(form)){ e.preventDefault(); }
+          }, true);
+          markRequiredLabels();
+        })();
+        </script>';
+    }
 
     public function on_activate() {
         global $wpdb;
