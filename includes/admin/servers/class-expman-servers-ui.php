@@ -217,8 +217,10 @@ class Expman_Servers_UI {
       if(rowId){
         const det = document.querySelector('tr.expman-details[data-for="'+rowId+'"]');
         const frm = document.querySelector('tr.expman-inline-form[data-for="'+rowId+'"]');
+        const act = document.querySelector('tr.expman-row-actions[data-for="'+rowId+'"]');
         if(det) det.style.display = "none";
         if(frm) frm.style.display = "none";
+        if(act) act.style.display = "none";
       }
     });
   }
@@ -243,6 +245,14 @@ class Expman_Servers_UI {
     const det = document.querySelector('tr.expman-details[data-for="'+id+'"]');
     const actions = document.querySelector('tr.expman-row-actions[data-for="'+id+'"]');
     if(!det) return;
+    // close other open rows
+    document.querySelectorAll('tr.expman-details, tr.expman-inline-form, tr.expman-row-actions').forEach(tr=>{
+      const forId = tr.getAttribute('data-for');
+      if(forId && forId !== id){
+        tr.style.display = "none";
+      }
+    });
+
     const isHidden = window.getComputedStyle(det).display === "none";
     det.style.display = isHidden ? "table-row" : "none";
     if(actions){
@@ -555,7 +565,7 @@ JS;
         echo '</thead><tbody>';
 
         if ( empty( $rows ) ) {
-            echo '<tr><td colspan="8" style="text-align:center;">אין נתונים להצגה.</td></tr>';
+            echo '<tr><td colspan="10" style="text-align:center;">אין נתונים להצגה.</td></tr>';
         }
 
         $row_index = 0;
@@ -638,7 +648,7 @@ JS;
             echo '</tr>';
 
             echo '<tr class="expman-details" data-for="' . esc_attr( $row->id ) . '" style="display:none;">';
-            echo '<td colspan="8">';
+            echo '<td colspan="10">';
             echo '<div style="display:grid;grid-template-columns:repeat(3,minmax(160px,1fr));gap:12px;">';
             echo '<div><strong>Express Service Code:</strong> ' . esc_html( $row->express_service_code ) . '</div>';
             echo '<div><strong>Ship Date:</strong> ' . esc_html( self::fmt_date_short( $row->ship_date ) ) . '</div>';
@@ -657,7 +667,7 @@ JS;
             echo '</tr>';
 
             echo '<tr class="expman-inline-form" data-for="' . esc_attr( $row->id ) . '" style="display:none;">';
-            echo '<td colspan="8">';
+            echo '<td colspan="10">';
             $this->render_form( intval( $row->id ), $row, false );
             echo '</td>';
             echo '</tr>';
