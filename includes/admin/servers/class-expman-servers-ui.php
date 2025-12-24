@@ -105,8 +105,7 @@ class Expman_Servers_UI {
         .expman-frontend .widefat th,.expman-frontend .widefat td{text-align:right;vertical-align:middle;}
         .expman-row-alt td{background:#f6f8fc;}
         .expman-details td{border-top:1px solid #e3e7ef;background:#f4f6fb;}
-                .expman-details, .expman-inline-form, .expman-row-actions{display:none;}
-.expman-inline-form td{border-top:1px solid #e3e7ef;background:#f9fbff;}
+        .expman-inline-form td{border-top:1px solid #e3e7ef;background:#f9fbff;}
         .expman-days-pill{display:inline-flex;align-items:center;justify-content:center;min-width:36px;padding:3px 10px;border-radius:999px;font-weight:600;font-size:inherit;line-height:1;font-family:inherit;}
         .expman-days-green{background:transparent;}
         .expman-days-yellow{background:#ffe4b8;color:#7a4c11;}
