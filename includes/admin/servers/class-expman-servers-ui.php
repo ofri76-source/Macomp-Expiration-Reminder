@@ -363,70 +363,133 @@ class Expman_Servers_UI {
     e.target.value = normalized;
   }, true);
 
-  // Customer search
-  function fetchCustomers(query){
-    const url = ajax + "?action=expman_customer_search&nonce=" + encodeURIComponent(nonce) + "&q=" + encodeURIComponent(query);
-    return fetch(url).then(r=>r.json()).then(d => (d && d.items) ? d.items : []).catch(()=>[]);
+
+// Customer search (dropdown rendered in <body> to avoid table z-index/stacking issues)
+function fetchCustomers(query){
+  const url = ajax + "?action=expman_customer_search&nonce=" + encodeURIComponent(nonce) + "&q=" + encodeURIComponent(query);
+  return fetch(url).then(r=>r.json()).then(d => (d && d.items) ? d.items : []).catch(()=>[]);
+}
+
+let expmanCustomerDropdown = document.querySelector(".expman-customer-dropdown");
+if(!expmanCustomerDropdown){
+  expmanCustomerDropdown = document.createElement("div");
+  expmanCustomerDropdown.className = "expman-customer-dropdown";
+  expmanCustomerDropdown.style.display = "none";
+  document.body.appendChild(expmanCustomerDropdown);
+}
+
+let activeCustomerInput = null;
+let activeCustomerForm  = null;
+
+function positionCustomerDropdown(){
+  if(!activeCustomerInput || expmanCustomerDropdown.style.display === "none") return;
+  const r = activeCustomerInput.getBoundingClientRect();
+  expmanCustomerDropdown.style.position = "fixed";
+  expmanCustomerDropdown.style.top = (r.bottom) + "px";
+  expmanCustomerDropdown.style.left = (r.left) + "px";
+  expmanCustomerDropdown.style.width = (r.width) + "px";
+}
+
+function hideCustomerDropdown(){
+  expmanCustomerDropdown.style.display = "none";
+  expmanCustomerDropdown.innerHTML = "";
+  activeCustomerInput = null;
+  activeCustomerForm  = null;
+}
+
+function fillCustomerFields(form, it){
+  const formId = form ? (form.getAttribute("id") || "") : "";
+  const idField = form ? (form.querySelector('input[name="customer_id"]') || (formId ? document.querySelector('input[name="customer_id"][form="'+formId+'"]') : null)) : null;
+  if(idField) idField.value = it.id || "";
+  const num = form ? (form.querySelector('input[name="customer_number"]') || (formId ? document.querySelector('input[name="customer_number"][form="'+formId+'"]') : null)) : null;
+  const name= form ? (form.querySelector('input[name="customer_name"]') || (formId ? document.querySelector('input[name="customer_name"][form="'+formId+'"]') : null)) : null;
+  if(num) num.value = it.customer_number || "";
+  if(name) name.value = it.customer_name || "";
+}
+
+function renderCustomerDropdown(items){
+  expmanCustomerDropdown.innerHTML = "";
+  expmanCustomerDropdown.style.display = items.length ? "block" : "none";
+  positionCustomerDropdown();
+
+  // Styling (inline to avoid CSS conflicts)
+  expmanCustomerDropdown.style.zIndex = "999999";
+  expmanCustomerDropdown.style.maxHeight = "260px";
+  expmanCustomerDropdown.style.overflow = "auto";
+  expmanCustomerDropdown.style.background = "#fff";
+  expmanCustomerDropdown.style.border = "1px solid #c7d1e0";
+  expmanCustomerDropdown.style.borderRadius = "8px";
+  expmanCustomerDropdown.style.boxShadow = "0 10px 30px rgba(0,0,0,0.18)";
+  expmanCustomerDropdown.style.textAlign = "right";
+  expmanCustomerDropdown.style.direction = "rtl";
+  expmanCustomerDropdown.style.borderLeft = "6px solid #2f5ea8"; // left stripe
+
+  items.forEach(it=>{
+    const b = document.createElement("button");
+    b.type = "button";
+    b.style.display = "block";
+    b.style.width = "100%";
+    b.style.textAlign = "right";
+    b.style.padding = "8px 10px";
+    b.style.border = "0";
+    b.style.background = "transparent";
+    b.style.cursor = "pointer";
+    b.style.fontSize = "13px";
+    b.textContent = (it.customer_number||"") + " - " + (it.customer_name||"");
+    b.addEventListener("mouseenter", ()=>{ b.style.background = "rgba(47,94,168,0.08)"; });
+    b.addEventListener("mouseleave", ()=>{ b.style.background = "transparent"; });
+    b.addEventListener("click", ()=>{
+      if(activeCustomerInput) activeCustomerInput.value = b.textContent;
+      if(activeCustomerForm)  fillCustomerFields(activeCustomerForm, it);
+      hideCustomerDropdown();
+    });
+    expmanCustomerDropdown.appendChild(b);
+  });
+}
+
+let customerFetchSeq = 0;
+
+document.addEventListener("input", async (e)=>{
+  const input = e.target.closest(".expman-customer-search");
+  if(!input) return;
+
+  const q = (input.value || "").trim();
+  if(q.length < 2){
+    hideCustomerDropdown();
+    return;
   }
 
-  document.addEventListener("input", async (e)=>{
-    const input = e.target.closest(".expman-customer-search");
-    if(!input) return;
+  activeCustomerInput = input;
+  activeCustomerForm  = input.closest("form");
 
-    const form = input.closest("form");
-    const results = form ? form.querySelector(".expman-customer-results") : null;
-    if(!results) return;
+  const seq = ++customerFetchSeq;
+  const items = await fetchCustomers(q);
+  if(seq !== customerFetchSeq) return; // ignore stale responses
+  renderCustomerDropdown(items);
+});
 
-    results.innerHTML = "";
-    const q = (input.value || "").trim();
-    if(q.length < 2) return;
+document.addEventListener("keydown",(e)=>{
+  const input = e.target.closest(".expman-customer-search");
+  if(!input) return;
+  if(e.key === "Enter"){
+    e.preventDefault();
+  }
+  if(e.key === "Escape"){
+    hideCustomerDropdown();
+  }
+});
 
-    const items = await fetchCustomers(q);
-    const box = document.createElement("div");
-    box.className = "expman-customer-box";
-    box.style.top = "100%";
+window.addEventListener("scroll", positionCustomerDropdown, true);
+window.addEventListener("resize", positionCustomerDropdown);
 
-    items.forEach(it=>{
-      const b = document.createElement("button");
-      b.type="button";
-      b.style.display="block";
-      b.style.width="100%";
-      b.style.textAlign="right";
-      b.style.padding="6px 8px";
-      b.style.border="0";
-      b.style.background="transparent";
-      b.textContent = (it.customer_number||"") + " - " + (it.customer_name||"");
-      b.addEventListener("click", ()=>{
-        input.value = b.textContent;
-        const formId = form.getAttribute("id") || "";
-        const idField = form.querySelector("input[name=\"customer_id\"]") || (formId ? document.querySelector('input[name="customer_id"][form="'+formId+'"]') : null);
-        if(idField) idField.value = it.id || "";
-        const num = form.querySelector("input[name=\"customer_number\"]") || (formId ? document.querySelector('input[name="customer_number"][form="'+formId+'"]') : null);
-        const name= form.querySelector("input[name=\"customer_name\"]") || (formId ? document.querySelector('input[name="customer_name"][form="'+formId+'"]') : null);
-        if(num) num.value = it.customer_number || "";
-        if(name) name.value = it.customer_name || "";
-        results.innerHTML = "";
-      });
-      box.appendChild(b);
-    });
+document.addEventListener("click",(e)=>{
+  if(e.target.closest(".expman-customer-dropdown")) return;
+  if(e.target.closest(".expman-customer-search")) return;
+  hideCustomerDropdown();
+});
 
-    results.appendChild(box);
-  });
+// Init
 
-  document.addEventListener("keydown",(e)=>{
-    const input = e.target.closest(".expman-customer-search");
-    if(!input) return;
-    if(e.key === "Enter"){
-      e.preventDefault();
-    }
-  });
-
-  document.addEventListener("click",(e)=>{
-    if(e.target.closest(".expman-customer-search")) return;
-    document.querySelectorAll(".expman-customer-results").forEach(r=>r.innerHTML="");
-  });
-
-  // Init
   setActiveSummary("all");
   applyStatusFilter("all");
 })();
