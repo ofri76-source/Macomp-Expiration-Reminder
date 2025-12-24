@@ -48,6 +48,13 @@ class Expman_Servers_Dell {
         $api_key = sanitize_text_field( $_POST['dell_api_key'] ?? '' );
         $red_days = intval( $_POST['dell_red_days'] ?? 30 );
         $yellow_days = intval( $_POST['dell_yellow_days'] ?? 60 );
+        $os_list_raw = isset( $_POST['dell_os_list'] ) ? (array) $_POST['dell_os_list'] : array();
+        $operating_systems = array();
+        foreach ( $os_list_raw as $os ) {
+            $os = sanitize_text_field( wp_unslash( $os ) );
+            if ( $os === '' ) { continue; }
+            $operating_systems[] = $os;
+        }
         $contact_names  = isset( $_POST['dell_contact_name'] ) ? (array) $_POST['dell_contact_name'] : array();
         $contact_emails = isset( $_POST['dell_contact_email'] ) ? (array) $_POST['dell_contact_email'] : array();
         $contacts = array();
@@ -87,6 +94,11 @@ class Expman_Servers_Dell {
         $settings['red_days'] = $red_days;
         $settings['yellow_days'] = $yellow_days;
         $settings['contacts'] = $contacts;
+        if ( ! empty( $operating_systems ) ) {
+            $settings['operating_systems'] = $operating_systems;
+        } else {
+            unset( $settings['operating_systems'] );
+        }
         // Keep single fields for older code paths
         $settings['contact_name'] = $contact_name;
         $settings['contact_email'] = $contact_email;

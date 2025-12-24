@@ -43,7 +43,51 @@ class Expiry_Manager_Plugin {
         add_action( 'admin_init', array( $this, 'maybe_install_tables' ) );
         add_action( 'wp_ajax_expman_customer_search', array( $this, 'ajax_customer_search' ) );
         add_action( 'admin_post_expman_server_create', array( $this, 'handle_expman_server_create' ) );
+        add_action( 'admin_footer', array( $this, 'render_required_fields_helper' ) );
 }
+
+    public function render_required_fields_helper() {
+        echo '<style>
+        .expman-required-label::after{content:" *";color:#d63638;font-weight:700;}
+        .expman-required-error{border-color:#d63638 !important;box-shadow:0 0 0 1px #d63638 !important;}
+        </style>';
+        echo '<script>
+        (function(){
+          function markRequiredLabels(){
+            document.querySelectorAll("input[required], select[required], textarea[required]").forEach(function(field){
+              var label = field.closest("div") ? field.closest("div").querySelector("label") : null;
+              if(label){ label.classList.add("expman-required-label"); }
+            });
+          }
+          function validateRequired(form){
+            var ok = true;
+            form.querySelectorAll("input[required], select[required], textarea[required]").forEach(function(field){
+              var empty = !field.value || field.value.trim() === "";
+              if(empty){
+                field.classList.add("expman-required-error");
+                ok = false;
+              } else {
+                field.classList.remove("expman-required-error");
+              }
+            });
+            return ok;
+          }
+          document.addEventListener("input", function(e){
+            if(e.target.matches(".expman-required-error")){
+              if(e.target.value && e.target.value.trim() !== ""){
+                e.target.classList.remove("expman-required-error");
+              }
+            }
+          });
+          document.addEventListener("submit", function(e){
+            var form = e.target;
+            if(!form || !form.querySelectorAll){ return; }
+            if(!validateRequired(form)){ e.preventDefault(); }
+          }, true);
+          markRequiredLabels();
+        })();
+        </script>';
+    }
 
     public function on_activate() {
         global $wpdb;
@@ -184,19 +228,43 @@ class Expiry_Manager_Plugin {
         }
 
         global $wpdb;
-        $q = sanitize_text_field( $_GET['q'] ?? '' );
+        $q = sanitize_text_field( wp_unslash( $_GET['q'] ?? '' ) );
         if ( mb_strlen( $q ) < 2 ) {
             wp_send_json( array( 'items' => array() ) );
         }
 
-        $table = $wpdb->prefix . 'dc_customers';
+        $settings = get_option( self::OPTION_KEY, array() );
+        $raw_table = preg_replace( '/[^a-zA-Z0-9_]/', '', (string) ( $settings['customers_table'] ?? '' ) );
+        $candidates = array();
+        if ( $raw_table !== '' ) {
+            $candidates[] = $raw_table;
+            if ( strpos( $raw_table, $wpdb->prefix ) !== 0 ) {
+                $candidates[] = $wpdb->prefix . $raw_table;
+            }
+        }
+        $candidates[] = $wpdb->prefix . 'dc_customers';
+
+        $table = '';
+        foreach ( $candidates as $candidate ) {
+            $exists = $wpdb->get_var( $wpdb->prepare( "SHOW TABLES LIKE %s", $candidate ) );
+            if ( $exists === $candidate ) {
+                $table = $candidate;
+                break;
+            }
+        }
+        if ( $table === '' ) {
+            wp_send_json( array( 'items' => array() ) );
+        }
         $like  = '%' . $wpdb->esc_like( $q ) . '%';
+
+        $has_is_deleted = $wpdb->get_var( $wpdb->prepare( "SHOW COLUMNS FROM {$table} LIKE %s", 'is_deleted' ) );
+        $deleted_clause = $has_is_deleted ? 'is_deleted=0 AND ' : '';
 
         $rows = $wpdb->get_results(
             $wpdb->prepare(
                 "SELECT id, customer_name, customer_number
                  FROM {$table}
-                 WHERE is_deleted=0 AND (customer_name LIKE %s OR customer_number LIKE %s)
+                 WHERE {$deleted_clause}(customer_name LIKE %s OR customer_number LIKE %s)
                  ORDER BY customer_name ASC
                  LIMIT 50",
                 $like, $like
