@@ -1051,7 +1051,7 @@ class Expman_Firewalls_UI {
             $per_page = $this->get_per_page();
             echo '<label style="display:inline-flex;align-items:center;gap:6px;margin-left:8px;">';
             echo '<span style="font-size:12px;color:#1f3b64;">הצג</span>';
-            echo '<select name="per_page" style="min-width:80px;" onchange="this.form.submit()">';
+            echo '<select name="per_page" style="min-width:80px;">';
             foreach ( array( 20, 50, 100, 200 ) as $opt ) {
                 echo '<option value="' . esc_attr( $opt ) . '" ' . selected( $per_page, $opt, false ) . '>' . esc_html( $opt ) . '</option>';
             }

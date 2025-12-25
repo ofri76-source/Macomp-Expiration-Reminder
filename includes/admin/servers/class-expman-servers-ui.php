@@ -382,68 +382,17 @@ class Expman_Servers_UI {
     return fetch(url).then(r=>r.json()).then(d => (d && d.items) ? d.items : []).catch(()=>[]);
   }
 
-  // Render results to <body> so they always appear above tables/rows (no clipping/stacking issues)
-  let customerDropdown = null;
-  let activeCustomerInput = null;
-
-  function ensureCustomerDropdown(){
-    if(customerDropdown) return customerDropdown;
-    customerDropdown = document.createElement("div");
-    customerDropdown.className = "expman-customer-dropdown";
-    document.body.appendChild(customerDropdown);
-    return customerDropdown;
-  }
-
-  function closeCustomerDropdown(){
-    if(!customerDropdown) return;
-    customerDropdown.style.display = "none";
-    customerDropdown.innerHTML = "";
-    activeCustomerInput = null;
-  }
-
-  function positionCustomerDropdown(input){
-    const dd = ensureCustomerDropdown();
-    const r = input.getBoundingClientRect();
-    dd.style.left = Math.round(r.left) + "px";
-    dd.style.top  = Math.round(r.bottom) + "px";
-    dd.style.width = Math.round(r.width) + "px";
-  }
-
-  function resolveFormForInput(input){
-    // Works for both: input inside <form> and inputs linked via form="id"
-    const formIdAttr = input.getAttribute("form");
-    if(formIdAttr){
-      const f = document.getElementById(formIdAttr);
-      if(f) return f;
-    }
-    return input.closest("form");
-  }
-
-  function setCustomerToForm(input, it){
-    const form = resolveFormForInput(input);
-    const formId = form ? (form.getAttribute("id") || "") : "";
-
-    input.value = (it.customer_number||"") + " - " + (it.customer_name||"");
-
-    const idField = (form ? form.querySelector("input[name=\"customer_id\"]") : null) || (formId ? document.querySelector('input[name="customer_id"][form="'+formId+'"]') : null);
-    if(idField) idField.value = it.id || "";
-
-    const numField = (form ? form.querySelector("input[name=\"customer_number\"]") : null) || (formId ? document.querySelector('input[name="customer_number"][form="'+formId+'"]') : null);
-    const nameField= (form ? form.querySelector("input[name=\"customer_name\"]") : null) || (formId ? document.querySelector('input[name="customer_name"][form="'+formId+'"]') : null);
-    if(numField) numField.value = it.customer_number || "";
-    if(nameField) nameField.value = it.customer_name || "";
-  }
-
   document.addEventListener("input", async (e)=>{
     const input = e.target.closest(".expman-customer-search");
     if(!input) return;
-    activeCustomerInput = input;
 
+    const form = input.closest("form");
+    const results = form ? form.querySelector(".expman-customer-results") : null;
+    if(!results) return;
+
+    results.innerHTML = "";
     const q = (input.value || "").trim();
-    if(q.length < 2){
-      closeCustomerDropdown();
-      return;
-    }
+    if(q.length < 2) return;
 
     const items = await fetchCustomers(q);
     const box = document.createElement("div");
@@ -452,7 +401,13 @@ class Expman_Servers_UI {
 
     items.forEach(it=>{
       const b = document.createElement("button");
-      b.type = "button";
+      b.type="button";
+      b.style.display="block";
+      b.style.width="100%";
+      b.style.textAlign="right";
+      b.style.padding="6px 8px";
+      b.style.border="0";
+      b.style.background="transparent";
       b.textContent = (it.customer_number||"") + " - " + (it.customer_name||"");
       b.addEventListener("click", ()=>{
         input.value = b.textContent;
@@ -465,18 +420,10 @@ class Expman_Servers_UI {
         if(name) name.value = it.customer_name || "";
         results.innerHTML = "";
       });
-      dd.appendChild(b);
+      box.appendChild(b);
     });
 
-    dd.style.display = "block";
-  });
-
-  document.addEventListener("keydown",(e)=>{
-    const input = e.target.closest(".expman-customer-search");
-    if(!input) return;
-    if(e.key === "Enter"){
-      e.preventDefault();
-    }
+    results.appendChild(box);
   });
 
   document.addEventListener("keydown",(e)=>{
@@ -489,12 +436,8 @@ class Expman_Servers_UI {
 
   document.addEventListener("click",(e)=>{
     if(e.target.closest(".expman-customer-search")) return;
-    if(e.target.closest(".expman-customer-dropdown")) return;
-    closeCustomerDropdown();
+    document.querySelectorAll(".expman-customer-results").forEach(r=>r.innerHTML="");
   });
-
-  window.addEventListener("scroll", ()=>{ if(activeCustomerInput) positionCustomerDropdown(activeCustomerInput); }, true);
-  window.addEventListener("resize", ()=>{ if(activeCustomerInput) positionCustomerDropdown(activeCustomerInput); });
 
   // Init
   setActiveSummary("all");
@@ -705,7 +648,6 @@ JS;
             echo '<td>' . esc_html( $row->service_tag ) . '</td>';
             echo '<td>' . esc_html( $row->operating_system ) . '</td>';
             echo '<td>' . esc_html( self::fmt_date_short( $row->ending_on ) ) . '</td>';
-            echo '<td>' . esc_html( self::fmt_date_short( $row->last_renewal_date ) ) . '</td>';
             echo '<td><span class="expman-days-pill ' . esc_attr( $days_class ) . '">' . esc_html( $days_label ) . '</span></td>';
             echo '</tr>';
 
@@ -734,7 +676,6 @@ JS;
             echo '<div><strong>Ship Date:</strong> ' . esc_html( self::fmt_date_short( $row->ship_date ) ) . '</div>';
             echo '<div><strong>מערכת הפעלה:</strong> ' . esc_html( $row->operating_system ) . '</div>';
             echo '<div><strong>סוג שירות:</strong> ' . esc_html( $row->service_level ) . '</div>';
-            echo '<div><strong>תאריך חידוש אחרון:</strong> ' . esc_html( self::fmt_date_short( $row->last_renewal_date ) ) . '</div>';
             echo '<div><strong>דגם שרת:</strong> ' . esc_html( $row->server_model ) . '</div>';
             echo '<div><strong>הודעה זמנית:</strong> ' . ( intval( $row->temp_notice_enabled ) ? esc_html( $row->temp_notice_text ) : '' ) . '</div>';
             echo '<div style="grid-column:span 2;"><strong>הערות:</strong> ' . esc_html( $row->notes ) . '</div>';
@@ -875,22 +816,6 @@ JS;
         }
 
         echo '</tbody></table>';
-
-        $total_pages = $per_page > 0 ? (int) ceil( $total / $per_page ) : 1;
-        if ( $total_pages > 1 ) {
-            $base_url = remove_query_arg( array( 'paged' ) );
-            echo '<div style="display:flex;gap:8px;align-items:center;justify-content:flex-end;margin:8px 0;">';
-            if ( $page_num > 1 ) {
-                $prev_url = add_query_arg( array( 'paged' => $page_num - 1, 'per_page' => $per_page, 'tab' => 'main' ), $base_url );
-                echo '<a class="button" href="' . esc_url( $prev_url ) . '">הקודם</a>';
-            }
-            echo '<span>עמוד ' . esc_html( $page_num ) . ' מתוך ' . esc_html( $total_pages ) . '</span>';
-            if ( $page_num < $total_pages ) {
-                $next_url = add_query_arg( array( 'paged' => $page_num + 1, 'per_page' => $per_page, 'tab' => 'main' ), $base_url );
-                echo '<a class="button" href="' . esc_url( $next_url ) . '">הבא</a>';
-            }
-            echo '</div>';
-        }
         echo '</div>';
     }
 
