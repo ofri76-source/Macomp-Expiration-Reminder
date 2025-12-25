@@ -135,9 +135,43 @@ class Expman_Nav {
                     $cls .= ' is-active';
                 }
             }
-            echo '<li><a class="' . esc_attr( $cls ) . '" href="' . esc_url( $url ) . '">' . esc_html( $label ) . '</a></li>';
+            echo '<li><a class="' . esc_attr( $cls ) . '" href="' . esc_url( $url ) . '" data-expman-target="' . esc_attr( $key ) . '">' . esc_html( $label ) . '</a></li>';
         }
         echo '</ul></nav>';
+
+        echo '<script>
+        (function(){
+          const sectionMap = {
+            dashboard: ".expman-dashboard",
+            firewalls: ".expman-firewalls",
+            certs: ".expman-certs",
+            domains: ".expman-domains",
+            servers: ".expman-servers",
+            trash: ".expman-trash",
+            logs: ".expman-logs",
+            settings: ".expman-settings"
+          };
+          const nav = document.querySelector(".expman-top-nav");
+          if(!nav) return;
+          nav.addEventListener("click", function(e){
+            const link = e.target.closest("a.expman-nav-btn");
+            if(!link || link.classList.contains("is-disabled")) return;
+            const target = link.getAttribute("data-expman-target");
+            const selector = sectionMap[target] || "";
+            if(!selector) return;
+            const panel = document.querySelector(selector);
+            if(!panel) return;
+            e.preventDefault();
+            document.querySelectorAll(".expman-frontend").forEach(p=>{
+              p.style.display = "none";
+            });
+            panel.style.display = "";
+            nav.querySelectorAll("a.expman-nav-btn").forEach(a=>{
+              a.classList.toggle("is-active", a === link);
+            });
+          });
+        })();
+        </script>';
     }
 
     public static function render_admin_nav( $version = '' ) {
