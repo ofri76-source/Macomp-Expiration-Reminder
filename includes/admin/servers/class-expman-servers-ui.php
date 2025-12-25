@@ -375,6 +375,12 @@ class Expman_Servers_UI {
     th.setAttribute("data-sort-order", next);
     sortTableByKey(table, key, next);
   });
+  document.addEventListener("input",(e)=>{
+    if(!e.target.matches(".expman-global-search")) return;
+    const table = e.target.closest("[data-expman-table-wrap]");
+    const tableEl = table ? table.querySelector("table") : null;
+    applyTextFilters(tableEl);
+  });
 
   // Bulk check all
   const all = document.getElementById("expman-bulk-check-all");
@@ -1086,6 +1092,7 @@ JS;
             }
         }
 
+        echo '<div class="expman-sync-control">';
         echo '<h3>הגדרות Dell TechDirect</h3>';
         echo '<label style="display:flex;align-items:center;gap:6px;font-weight:600;margin:8px 0;">';
         echo '<input type="checkbox" id="expman-sync-toggle" checked> הצג כפתורי סנכרון</label>';
