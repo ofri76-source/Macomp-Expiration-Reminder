@@ -74,6 +74,26 @@ class Expman_Dashboard_Page {
 
         echo '<div class="expman-dashboard-grid">';
 
+        if ( class_exists( 'Expman_Firewalls_Actions' ) ) {
+            $fw_actions = new Expman_Firewalls_Actions();
+            $fw_summary = $fw_actions->get_summary_counts( $this->option_key );
+            $fw_rows = $fw_actions->get_firewalls_rows( array(), 'days_to_renew', 'ASC', 'active' );
+            $fw_list = array();
+            foreach ( (array) $fw_rows as $row ) {
+                $days = isset( $row->days_to_renew ) ? intval( $row->days_to_renew ) : null;
+                $status = $this->status_for_days( $days, $yellow, $red );
+                $fw_list[] = array(
+                    'title' => (string) ( $row->customer_name ?? '' ),
+                    'secondary' => (string) ( $row->serial_number ?? '' ),
+                    'date' => (string) ( $row->expiry_date ?? '' ),
+                    'days' => $days,
+                    'status' => $status,
+                );
+            }
+            $dashboard_data['firewalls'] = $fw_list;
+            $this->summary_cards_markup( 'חומות אש', $fw_summary, 'firewalls' );
+        }
+
         if ( class_exists( 'Expman_Servers_Actions' ) && class_exists( 'Expman_Servers_Page' ) ) {
             $servers_actions = new Expman_Servers_Actions( new Expman_Servers_Logger() );
             $servers_actions->set_option_key( $this->option_key );
@@ -94,26 +114,6 @@ class Expman_Dashboard_Page {
             }
             $dashboard_data['servers'] = $servers_list;
             $this->summary_cards_markup( 'שרתים', $servers_summary, 'servers' );
-        }
-
-        if ( class_exists( 'Expman_Firewalls_Actions' ) ) {
-            $fw_actions = new Expman_Firewalls_Actions();
-            $fw_summary = $fw_actions->get_summary_counts( $this->option_key );
-            $fw_rows = $fw_actions->get_firewalls_rows( array(), 'days_to_renew', 'ASC', 'active' );
-            $fw_list = array();
-            foreach ( (array) $fw_rows as $row ) {
-                $days = isset( $row->days_to_renew ) ? intval( $row->days_to_renew ) : null;
-                $status = $this->status_for_days( $days, $yellow, $red );
-                $fw_list[] = array(
-                    'title' => (string) ( $row->customer_name ?? '' ),
-                    'secondary' => (string) ( $row->serial_number ?? '' ),
-                    'date' => (string) ( $row->expiry_date ?? '' ),
-                    'days' => $days,
-                    'status' => $status,
-                );
-            }
-            $dashboard_data['firewalls'] = $fw_list;
-            $this->summary_cards_markup( 'חומות אש', $fw_summary, 'firewalls' );
         }
 
         // Domains + Certs from exp_items
