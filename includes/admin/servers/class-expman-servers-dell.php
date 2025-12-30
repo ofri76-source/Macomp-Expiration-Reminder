@@ -48,6 +48,7 @@ class Expman_Servers_Dell {
         $api_key = sanitize_text_field( $_POST['dell_api_key'] ?? '' );
         $red_days = intval( $_POST['dell_red_days'] ?? 30 );
         $yellow_days = intval( $_POST['dell_yellow_days'] ?? 60 );
+        $hide_sync_buttons = ! empty( $_POST['dell_hide_sync_buttons'] );
         $os_list_raw = isset( $_POST['dell_os_list'] ) ? (array) $_POST['dell_os_list'] : array();
         $operating_systems = array();
         foreach ( $os_list_raw as $os ) {
@@ -93,6 +94,7 @@ class Expman_Servers_Dell {
         $settings['api_key'] = $api_key;
         $settings['red_days'] = $red_days;
         $settings['yellow_days'] = $yellow_days;
+        $settings['hide_sync_buttons'] = $hide_sync_buttons ? 1 : 0;
         $settings['contacts'] = $contacts;
         if ( ! empty( $operating_systems ) ) {
             $settings['operating_systems'] = $operating_systems;
@@ -112,6 +114,7 @@ class Expman_Servers_Dell {
             array( 'label' => 'API Key', 'from' => $prev['api_key'] ?? '', 'to' => $api_key ),
             array( 'label' => 'Red Days', 'from' => $prev['red_days'] ?? '', 'to' => $red_days ),
             array( 'label' => 'Yellow Days', 'from' => $prev['yellow_days'] ?? '', 'to' => $yellow_days ),
+            array( 'label' => 'Hide Sync Buttons', 'from' => ! empty( $prev['hide_sync_buttons'] ) ? 1 : 0, 'to' => $hide_sync_buttons ? 1 : 0 ),
             array( 'label' => 'איש קשר להצעות', 'from' => $prev['contact_name'] ?? '', 'to' => $contact_name ),
             array( 'label' => 'מייל איש קשר', 'from' => $prev['contact_email'] ?? '', 'to' => $contact_email ),
         );
