@@ -119,6 +119,162 @@ class Expman_Nav {
         .expman-top-nav a.expman-nav-btn.is-disabled{pointer-events:none;opacity:.5;background:#c9d3e6;color:#42536b;border-color:#b9c5d8}
         </style>';
 
+
+        echo '<style>
+        table.widefat.expman-client-sort thead th{cursor:pointer;user-select:none;}
+        table.widefat.expman-client-sort thead th .expman-sort-ind{font-size:11px;margin-right:6px;opacity:.7;}
+        </style>';
+
+        echo '<script>
+        (function(){
+          if(window.expmanClientSortInit) return;
+          window.expmanClientSortInit = true;
+
+          function norm(s){return (s||"").toString().trim();}
+          function isNum(s){return /^-?\d+(?:\.\d+)?$/.test(s);}
+          function parseDateDMY(s){
+            // dd/mm/yyyy
+            var m = norm(s).match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+            if(!m) return null;
+            var d = parseInt(m[1],10), mo=parseInt(m[2],10)-1, y=parseInt(m[3],10);
+            var dt = new Date(y, mo, d);
+            if(dt.getFullYear()!==y||dt.getMonth()!==mo||dt.getDate()!==d) return null;
+            return dt.getTime();
+          }
+
+          function getCellText(tr, idx){
+            var td = tr.children && tr.children[idx];
+            if(!td) return "";
+            return norm(td.textContent);
+          }
+
+          function closeAllPanels(table){
+            table.querySelectorAll("tr.expman-details, tr.expman-inline-form, tr.expman-row-actions").forEach(function(tr){
+              tr.style.display = "none";
+            });
+          }
+
+          function buildGroups(tbody){
+            var rows = Array.prototype.slice.call(tbody.children);
+            var groups = [];
+            var i = 0;
+            while(i < rows.length){
+              var r = rows[i];
+              if(r.classList && r.classList.contains("expman-row")){
+                var id = r.getAttribute("data-expman-row-id") || r.getAttribute("data-id") || "";
+                var g = { main: r, rows:[r] };
+                i++;
+                while(i < rows.length){
+                  var n = rows[i];
+                  var forId = n.getAttribute && n.getAttribute("data-for");
+                  if(n.classList && n.classList.contains("expman-row")) break;
+                  if(forId && id && forId === id){
+                    g.rows.push(n);
+                    i++;
+                    continue;
+                  }
+                  // unknown row type, stop grouping
+                  break;
+                }
+                groups.push(g);
+              } else {
+                groups.push({ main:r, rows:[r]});
+                i++;
+              }
+            }
+            return groups;
+          }
+
+          function sortTable(table, idx, dir){
+            var tbody = table.querySelector("tbody");
+            if(!tbody) return;
+            closeAllPanels(table);
+            var groups = buildGroups(tbody);
+            groups.sort(function(a,b){
+              var av = getCellText(a.main, idx);
+              var bv = getCellText(b.main, idx);
+
+              // try date dd/mm/yyyy
+              var ad = parseDateDMY(av);
+              var bd = parseDateDMY(bv);
+              if(ad !== null && bd !== null){
+                return dir * (ad - bd);
+              }
+
+              // try numeric
+              if(isNum(av) && isNum(bv)){
+                return dir * (parseFloat(av) - parseFloat(bv));
+              }
+
+              return dir * av.localeCompare(bv, undefined, {numeric:true, sensitivity:"base"});
+            });
+
+            var frag = document.createDocumentFragment();
+            groups.forEach(function(g){
+              g.rows.forEach(function(r){ frag.appendChild(r); });
+            });
+            tbody.appendChild(frag);
+          }
+
+          function bindTable(table){
+            if(table.dataset.expmanClientSortBound === "1") return;
+            table.dataset.expmanClientSortBound = "1";
+            table.classList.add("expman-client-sort");
+
+            var thead = table.querySelector("thead");
+            if(!thead) return;
+            var headerRow = thead.querySelector("tr");
+            if(!headerRow) return;
+            Array.prototype.forEach.call(headerRow.children, function(th, idx){
+              if(!th || th.tagName !== "TH") return;
+              // skip checkbox column
+              if(th.querySelector("input,select,textarea")) return;
+              th.addEventListener("click", function(ev){
+                // if link, prevent navigation
+                var a = ev.target.closest("a");
+                if(a) ev.preventDefault();
+
+                var current = th.dataset.expmanSortDir || "0";
+                var dir = current === "1" ? -1 : 1;
+
+                // reset indicators
+                Array.prototype.forEach.call(headerRow.children, function(h){
+                  h.dataset.expmanSortDir = "0";
+                  var ind = h.querySelector(".expman-sort-ind");
+                  if(ind) ind.remove();
+                });
+
+                th.dataset.expmanSortDir = String(dir);
+                var ind = document.createElement("span");
+                ind.className = "expman-sort-ind";
+                ind.textContent = dir === 1 ? "▲" : "▼";
+                th.insertBefore(ind, th.firstChild);
+
+                sortTable(table, idx, dir);
+              });
+            });
+
+            // also prevent default on any header link
+            thead.querySelectorAll("th a").forEach(function(a){
+              a.addEventListener("click", function(ev){ ev.preventDefault(); });
+            });
+          }
+
+          function init(){
+            document.querySelectorAll(".expman-frontend table.widefat, .wrap table.widefat").forEach(function(t){
+              bindTable(t);
+            });
+          }
+
+          if(document.readyState === "loading"){
+            document.addEventListener("DOMContentLoaded", init);
+          } else {
+            init();
+          }
+        })();
+        </script>';
+
+
         $current_url = home_url( add_query_arg( array(), $_SERVER['REQUEST_URI'] ?? '' ) );
         $current_path = untrailingslashit( (string) wp_parse_url( $current_url, PHP_URL_PATH ) );
 
@@ -135,43 +291,9 @@ class Expman_Nav {
                     $cls .= ' is-active';
                 }
             }
-            echo '<li><a class="' . esc_attr( $cls ) . '" href="' . esc_url( $url ) . '" data-expman-target="' . esc_attr( $key ) . '">' . esc_html( $label ) . '</a></li>';
+            echo '<li><a class="' . esc_attr( $cls ) . '" href="' . esc_url( $url ) . '">' . esc_html( $label ) . '</a></li>';
         }
         echo '</ul></nav>';
-
-        echo '<script>
-        (function(){
-          const sectionMap = {
-            dashboard: ".expman-dashboard",
-            firewalls: ".expman-firewalls",
-            certs: ".expman-certs",
-            domains: ".expman-domains",
-            servers: ".expman-servers",
-            trash: ".expman-trash",
-            logs: ".expman-logs",
-            settings: ".expman-settings"
-          };
-          const nav = document.querySelector(".expman-top-nav");
-          if(!nav) return;
-          nav.addEventListener("click", function(e){
-            const link = e.target.closest("a.expman-nav-btn");
-            if(!link || link.classList.contains("is-disabled")) return;
-            const target = link.getAttribute("data-expman-target");
-            const selector = sectionMap[target] || "";
-            if(!selector) return;
-            const panel = document.querySelector(selector);
-            if(!panel) return;
-            e.preventDefault();
-            document.querySelectorAll(".expman-frontend").forEach(p=>{
-              p.style.display = "none";
-            });
-            panel.style.display = "";
-            nav.querySelectorAll("a.expman-nav-btn").forEach(a=>{
-              a.classList.toggle("is-active", a === link);
-            });
-          });
-        })();
-        </script>';
     }
 
     public static function render_admin_nav( $version = '' ) {
@@ -196,6 +318,164 @@ class Expman_Nav {
         .expman-admin-nav a:hover{background:#264f8f;border-color:#264f8f;}
         .expman-admin-nav a.is-active{background:#cfe3ff;color:#1f3b64;border-color:#9fb3d9;}
         </style>';
+
+
+
+        echo '<style>
+        table.widefat.expman-client-sort thead th{cursor:pointer;user-select:none;}
+        table.widefat.expman-client-sort thead th .expman-sort-ind{font-size:11px;margin-right:6px;opacity:.7;}
+        </style>';
+
+        echo '<script>
+        (function(){
+          if(window.expmanClientSortInit) return;
+          window.expmanClientSortInit = true;
+
+          function norm(s){return (s||"").toString().trim();}
+          function isNum(s){return /^-?\d+(?:\.\d+)?$/.test(s);}
+          function parseDateDMY(s){
+            // dd/mm/yyyy
+            var m = norm(s).match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+            if(!m) return null;
+            var d = parseInt(m[1],10), mo=parseInt(m[2],10)-1, y=parseInt(m[3],10);
+            var dt = new Date(y, mo, d);
+            if(dt.getFullYear()!==y||dt.getMonth()!==mo||dt.getDate()!==d) return null;
+            return dt.getTime();
+          }
+
+          function getCellText(tr, idx){
+            var td = tr.children && tr.children[idx];
+            if(!td) return "";
+            return norm(td.textContent);
+          }
+
+          function closeAllPanels(table){
+            table.querySelectorAll("tr.expman-details, tr.expman-inline-form, tr.expman-row-actions").forEach(function(tr){
+              tr.style.display = "none";
+            });
+          }
+
+          function buildGroups(tbody){
+            var rows = Array.prototype.slice.call(tbody.children);
+            var groups = [];
+            var i = 0;
+            while(i < rows.length){
+              var r = rows[i];
+              if(r.classList && r.classList.contains("expman-row")){
+                var id = r.getAttribute("data-expman-row-id") || r.getAttribute("data-id") || "";
+                var g = { main: r, rows:[r] };
+                i++;
+                while(i < rows.length){
+                  var n = rows[i];
+                  var forId = n.getAttribute && n.getAttribute("data-for");
+                  if(n.classList && n.classList.contains("expman-row")) break;
+                  if(forId && id && forId === id){
+                    g.rows.push(n);
+                    i++;
+                    continue;
+                  }
+                  // unknown row type, stop grouping
+                  break;
+                }
+                groups.push(g);
+              } else {
+                groups.push({ main:r, rows:[r]});
+                i++;
+              }
+            }
+            return groups;
+          }
+
+          function sortTable(table, idx, dir){
+            var tbody = table.querySelector("tbody");
+            if(!tbody) return;
+            closeAllPanels(table);
+            var groups = buildGroups(tbody);
+            groups.sort(function(a,b){
+              var av = getCellText(a.main, idx);
+              var bv = getCellText(b.main, idx);
+
+              // try date dd/mm/yyyy
+              var ad = parseDateDMY(av);
+              var bd = parseDateDMY(bv);
+              if(ad !== null && bd !== null){
+                return dir * (ad - bd);
+              }
+
+              // try numeric
+              if(isNum(av) && isNum(bv)){
+                return dir * (parseFloat(av) - parseFloat(bv));
+              }
+
+              return dir * av.localeCompare(bv, undefined, {numeric:true, sensitivity:"base"});
+            });
+
+            var frag = document.createDocumentFragment();
+            groups.forEach(function(g){
+              g.rows.forEach(function(r){ frag.appendChild(r); });
+            });
+            tbody.appendChild(frag);
+          }
+
+          function bindTable(table){
+            if(table.dataset.expmanClientSortBound === "1") return;
+            table.dataset.expmanClientSortBound = "1";
+            table.classList.add("expman-client-sort");
+
+            var thead = table.querySelector("thead");
+            if(!thead) return;
+            var headerRow = thead.querySelector("tr");
+            if(!headerRow) return;
+            Array.prototype.forEach.call(headerRow.children, function(th, idx){
+              if(!th || th.tagName !== "TH") return;
+              // skip checkbox column
+              if(th.querySelector("input,select,textarea")) return;
+              th.addEventListener("click", function(ev){
+                // if link, prevent navigation
+                var a = ev.target.closest("a");
+                if(a) ev.preventDefault();
+
+                var current = th.dataset.expmanSortDir || "0";
+                var dir = current === "1" ? -1 : 1;
+
+                // reset indicators
+                Array.prototype.forEach.call(headerRow.children, function(h){
+                  h.dataset.expmanSortDir = "0";
+                  var ind = h.querySelector(".expman-sort-ind");
+                  if(ind) ind.remove();
+                });
+
+                th.dataset.expmanSortDir = String(dir);
+                var ind = document.createElement("span");
+                ind.className = "expman-sort-ind";
+                ind.textContent = dir === 1 ? "▲" : "▼";
+                th.insertBefore(ind, th.firstChild);
+
+                sortTable(table, idx, dir);
+              });
+            });
+
+            // also prevent default on any header link
+            thead.querySelectorAll("th a").forEach(function(a){
+              a.addEventListener("click", function(ev){ ev.preventDefault(); });
+            });
+          }
+
+          function init(){
+            document.querySelectorAll(".expman-frontend table.widefat, .wrap table.widefat").forEach(function(t){
+              bindTable(t);
+            });
+          }
+
+          if(document.readyState === "loading"){
+            document.addEventListener("DOMContentLoaded", init);
+          } else {
+            init();
+          }
+        })();
+        </script>';
+
+
 
         echo '<nav class="expman-admin-nav" aria-label="Expiry Manager Admin Navigation"><ul>';
         $current_page = sanitize_key( $_GET['page'] ?? '' );
