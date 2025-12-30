@@ -106,12 +106,16 @@ class Expman_Servers_UI {
         .expman-row-alt td{background:#f6f8fc;}
         .expman-details td{border-top:1px solid #e3e7ef;background:#f4f6fb;}
         .expman-inline-form td{border-top:1px solid #e3e7ef;background:#f9fbff;}
-        .expman-days-pill{display:inline-flex;align-items:center;justify-content:center;min-width:36px;padding:3px 10px;border-radius:999px;font-weight:600;font-size:inherit;line-height:1;font-family:inherit;}
+        .expman-details,.expman-inline-form,.expman-row-actions{display:none !important;}
+        .expman-sort-asc:after{content:" ▲";font-size:11px;opacity:0.9;}
+        .expman-sort-desc:after{content:" ▼";font-size:11px;opacity:0.9;}
+        .expman-details.expman-open,.expman-inline-form.expman-open,.expman-row-actions.expman-open{display:table-row !important;}
+        .expman-days-pill{display:inline-flex;align-items:center;justify-content:center;min-width:36px;padding:3px 10px;border-radius:999px;font-weight:600;font-size:inherit;line-height:1;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Oxygen-Sans,Ubuntu,Cantarell,"Helvetica Neue",sans-serif;}
         .expman-days-green{background:transparent;}
         .expman-days-yellow{background:#ffe4b8;color:#7a4c11;}
         .expman-days-red{background:#ffd1d1;color:#7a1f1f;}
         .expman-days-unknown{background:#e2e6eb;color:#2b3f5c;}
-        .expman-row-actions td{background:#f6f8fc;border-bottom:1px solid #e3e7ef;padding:8px;display:none;}
+        .expman-row-actions td{background:#f6f8fc;border-bottom:1px solid #e3e7ef;padding:8px;}
         .expman-row-actions .button{height:28px;line-height:26px;padding:0 10px;}
         .expman-col-customer-num{width:120px;}
         .expman-col-customer-name{width:160px;}
@@ -128,13 +132,15 @@ class Expman_Servers_UI {
         .expman-modal-close{all:unset;cursor:pointer;font-size:22px;line-height:1;padding:2px 8px;border-radius:8px;}
         .expman-modal-close:hover{background:#f3f5f8;}
         .expman-modal-body{padding:16px;}
-        .expman-customer-results{position:absolute;right:0;left:0;top:100%;z-index:99999;}
+
+        /* Customer dropdown (rendered to <body> to avoid table clipping/stacking issues) */
+        .expman-customer-dropdown{position:fixed;z-index:2147483647;display:none;background:#fff;border:1px solid #d0d7e2;border-left:4px solid #2f5ea8;border-radius:8px;max-height:260px;overflow:auto;box-shadow:0 10px 30px rgba(0,0,0,0.12);transform:translateZ(0);isolation:isolate;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Oxygen-Sans,Ubuntu,Cantarell,"Helvetica Neue",sans-serif;font-size:13px;color:#1d2327;direction:rtl;text-align:right;}
+        .expman-customer-dropdown button{display:block;width:100%;cursor:pointer;padding:8px 10px;text-align:right;background:none;border:0;margin:0;font:inherit;color:inherit;line-height:1.2;}
+        .expman-customer-dropdown button:hover{background:#f3f6fb;}
+
+        /* Legacy containers (kept for backwards compatibility) */
+        .expman-customer-results{position:relative;z-index:99999;}
         .expman-customer-box{position:absolute;right:0;left:0;top:0;background:#fff;border:1px solid #ddd;border-radius:6px;z-index:99999;max-height:240px;overflow:auto;}
-        .expman-search-wrap{display:flex;align-items:center;gap:8px;margin:8px 0;}
-        .expman-search-input{min-width:240px;height:28px;padding:4px 8px;border:1px solid #c7d1e0;border-radius:6px;}
-        .expman-sync-hidden .expman-sync-control{display:none !important;}
-        .expman-assign-table td{position:relative;overflow:visible;}
-        .expman-assign-table{overflow:visible;}
         </style>';
 
         echo '<div class="expman-frontend expman-servers" style="direction:rtl;">';
@@ -222,10 +228,10 @@ class Expman_Servers_UI {
       if(rowId){
         const det = document.querySelector('tr.expman-details[data-for="'+rowId+'"]');
         const frm = document.querySelector('tr.expman-inline-form[data-for="'+rowId+'"]');
-        const actions = document.querySelector('tr.expman-row-actions[data-for="'+rowId+'"]');
-        if(det) det.style.display = "none";
-        if(frm) frm.style.display = "none";
-        if(actions) actions.style.display = "none";
+        const act = document.querySelector('tr.expman-row-actions[data-for="'+rowId+'"]');
+        setOpen(det, false);
+        setOpen(frm, false);
+        setOpen(act, false);
       }
     });
   }
@@ -237,9 +243,16 @@ class Expman_Servers_UI {
     });
   });
 
-  function closeAllRowPanels(){
-    document.querySelectorAll("tr.expman-details, tr.expman-inline-form, tr.expman-row-actions").forEach(row=>{
-      row.style.display = "none";
+  function setOpen(tr, open){
+    if(!tr) return;
+    tr.classList.toggle('expman-open', !!open);
+  }
+
+  function closeAllRowPanels(exceptId){
+    document.querySelectorAll('tr.expman-details, tr.expman-inline-form, tr.expman-row-actions').forEach(tr=>{
+      const id = tr.getAttribute('data-for');
+      if(exceptId && id === exceptId) return;
+      setOpen(tr, false);
     });
   }
 
@@ -255,14 +268,18 @@ class Expman_Servers_UI {
     if(!id) return;
     const det = document.querySelector('tr.expman-details[data-for="'+id+'"]');
     const actions = document.querySelector('tr.expman-row-actions[data-for="'+id+'"]');
+    const frm = document.querySelector('tr.expman-inline-form[data-for="'+id+'"]');
     if(!det) return;
-    const isHidden = window.getComputedStyle(det).display === "none";
-    closeAllRowPanels();
+    const isHidden = !det.classList.contains('expman-open');
     if(isHidden){
-      det.style.display = "table-row";
-      if(actions){
-        actions.style.display = "table-row";
-      }
+      closeAllRowPanels(id);
+      setOpen(det, true);
+      setOpen(actions, true);
+      setOpen(frm, false);
+    } else {
+      setOpen(det, false);
+      setOpen(actions, false);
+      setOpen(frm, false);
     }
   });
 
@@ -275,112 +292,150 @@ class Expman_Servers_UI {
     if(!id) return;
     const frm = document.querySelector('tr.expman-inline-form[data-for="'+id+'"]');
     const actions = document.querySelector('tr.expman-row-actions[data-for="'+id+'"]');
+    const det = document.querySelector('tr.expman-details[data-for="'+id+'"]');
     if(!frm) return;
-    const isHidden = window.getComputedStyle(frm).display === "none";
-    closeAllRowPanels();
+    const isHidden = !frm.classList.contains('expman-open');
     if(isHidden){
-      frm.style.display = "table-row";
-      if(actions){
-        actions.style.display = "table-row";
-      }
+      closeAllRowPanels(id);
+      setOpen(det, false);
+      setOpen(frm, true);
+      setOpen(actions, true);
+    } else {
+      setOpen(frm, false);
+      setOpen(actions, false);
     }
   });
 
   // Simple table filters (client-side)
-  function applyTextFilters(container){
-    const table = container ? container.querySelector("table") : null;
-    const inputs = table ? table.querySelectorAll(".expman-filter-input") : document.querySelectorAll(".expman-filter-input");
+  function applyTextFilters(){
+    const inputs = document.querySelectorAll(".expman-filter-input");
     const filters = {};
     inputs.forEach(inp=>{
       const k = inp.getAttribute("data-filter");
       const v = (inp.value||"").trim().toLowerCase();
       if(k && v) filters[k]=v;
     });
-    const globalInput = container ? container.querySelector(".expman-global-search") : document.querySelector(".expman-global-search");
-    const globalVal = globalInput ? (globalInput.value || "").trim().toLowerCase() : "";
-    const rows = table ? table.querySelectorAll("tr.expman-row") : document.querySelectorAll("tr.expman-row");
-    rows.forEach(row=>{
+    document.querySelectorAll("tr.expman-row").forEach(row=>{
       let ok = true;
       Object.keys(filters).forEach(k=>{
         const val = (row.getAttribute("data-"+k) || "").toLowerCase();
         if(val.indexOf(filters[k]) === -1) ok = false;
       });
-      if(globalVal){
-        const searchVal = (row.getAttribute("data-expman-search") || "").toLowerCase();
-        if(searchVal.indexOf(globalVal) === -1) ok = false;
-      }
       row.style.display = ok ? "" : "none";
       const id = row.getAttribute("data-expman-row-id");
       if(!ok && id){
         const det = document.querySelector('tr.expman-details[data-for="'+id+'"]');
         const frm = document.querySelector('tr.expman-inline-form[data-for="'+id+'"]');
-        const actions = document.querySelector('tr.expman-row-actions[data-for="'+id+'"]');
-        if(det) det.style.display = "none";
-        if(frm) frm.style.display = "none";
-        if(actions) actions.style.display = "none";
+        const act = document.querySelector('tr.expman-row-actions[data-for="'+id+'"]');
+        setOpen(det, false);
+        setOpen(frm, false);
+        setOpen(act, false);
       }
     });
   }
   document.addEventListener("input",(e)=>{
     if(!e.target.matches(".expman-filter-input")) return;
-    const container = e.target.closest("[data-expman-table-wrap]") || document;
-    applyTextFilters(container === document ? null : container);
-  });
-  document.addEventListener("input",(e)=>{
-    if(!e.target.matches(".expman-global-search")) return;
-    const container = e.target.closest("[data-expman-table-wrap]") || document;
-    applyTextFilters(container === document ? null : container);
+    applyTextFilters();
   });
 
-  function sortTableByKey(table, key, order){
-    if(!table) return;
-    const tbody = table.querySelector("tbody");
+
+  function expmanSortTable(table, colIndex, dir){
+    var tbody = table.tBodies && table.tBodies[0];
     if(!tbody) return;
-    const rows = Array.from(tbody.querySelectorAll("tr.expman-row"));
-    const normalize = (val) => (val || "").toString().toLowerCase();
-    rows.sort((a, b) => {
-      const av = normalize(a.getAttribute("data-"+key));
-      const bv = normalize(b.getAttribute("data-"+key));
-      const aNum = parseFloat(av);
-      const bNum = parseFloat(bv);
-      const isNum = !isNaN(aNum) && !isNaN(bNum);
-      const cmp = isNum ? (aNum - bNum) : av.localeCompare(bv, "he");
-      return order === "desc" ? -cmp : cmp;
-    });
-    rows.forEach(row => {
-      const id = row.getAttribute("data-expman-row-id");
-      tbody.appendChild(row);
-      if(id){
-        const actions = tbody.querySelector('tr.expman-row-actions[data-for="'+id+'"]');
-        const details = tbody.querySelector('tr.expman-details[data-for="'+id+'"]');
-        const form = tbody.querySelector('tr.expman-inline-form[data-for="'+id+'"]');
-        if(actions) tbody.appendChild(actions);
-        if(details) tbody.appendChild(details);
-        if(form) tbody.appendChild(form);
+
+    function cellText(cell){
+      if(!cell) return "";
+      var inp = cell.querySelector && cell.querySelector("input,select,textarea");
+      if(inp) return (inp.value || "").toString();
+      return (cell.textContent || "").toString();
+    }
+
+    function parseVal(s){
+      s = (s||"").trim();
+      if(/^\d{2}\/\d{2}\/\d{4}$/.test(s)){
+        return {t:"date", v: s.slice(6,10)+s.slice(3,5)+s.slice(0,2)};
       }
+      if(/^\d{4}-\d{2}-\d{2}$/.test(s)){
+        return {t:"date", v: s.replace(/-/g,"")};
+      }
+      var num = s.replace(/[^\d.\-]/g,"");
+      if(num !== "" && /^-?\d+(\.\d+)?$/.test(num)){
+        return {t:"num", v: parseFloat(num)};
+      }
+      return {t:"text", v: s.toLowerCase()};
+    }
+
+    // Servers main table groups (row + actions + details + form)
+    var mainRows = Array.from(tbody.querySelectorAll('tr.expman-row'));
+    if(mainRows.length){
+      var groups = mainRows.map(function(r){
+        var id = r.getAttribute('data-expman-row-id');
+        return {
+          row: r,
+          id: id,
+          actions: id ? tbody.querySelector('tr.expman-row-actions[data-for="'+id+'"]') : null,
+          details: id ? tbody.querySelector('tr.expman-details[data-for="'+id+'"]') : null,
+          form: id ? tbody.querySelector('tr.expman-inline-form[data-for="'+id+'"]') : null
+        };
+      });
+
+      groups.sort(function(a,b){
+        var av = parseVal(cellText(a.row.children[colIndex]));
+        var bv = parseVal(cellText(b.row.children[colIndex]));
+        var cmp = 0;
+        if(av.t === 'num' && bv.t === 'num') cmp = av.v - bv.v;
+        else if(av.t === 'date' && bv.t === 'date') cmp = av.v > bv.v ? 1 : (av.v < bv.v ? -1 : 0);
+        else cmp = av.v > bv.v ? 1 : (av.v < bv.v ? -1 : 0);
+        return dir === 'asc' ? cmp : -cmp;
+      });
+
+      groups.forEach(function(g){
+        tbody.appendChild(g.row);
+        if(g.actions) tbody.appendChild(g.actions);
+        if(g.details) tbody.appendChild(g.details);
+        if(g.form) tbody.appendChild(g.form);
+      });
+      return;
+    }
+
+    // Generic table: sort plain rows
+    var rows = Array.from(tbody.querySelectorAll('tr'));
+    rows.sort(function(a,b){
+      var av = parseVal(a.children[colIndex] ? a.children[colIndex].textContent : '');
+      var bv = parseVal(b.children[colIndex] ? b.children[colIndex].textContent : '');
+      var cmp = 0;
+      if(av.t === 'num' && bv.t === 'num') cmp = av.v - bv.v;
+      else if(av.t === 'date' && bv.t === 'date') cmp = av.v > bv.v ? 1 : (av.v < bv.v ? -1 : 0);
+      else cmp = av.v > bv.v ? 1 : (av.v < bv.v ? -1 : 0);
+      return dir === 'asc' ? cmp : -cmp;
+    });
+    rows.forEach(function(r){ tbody.appendChild(r); });
+  }
+
+  function expmanBindSortableTables(){
+    document.querySelectorAll('table.expman-sortable').forEach(function(table){
+      var headRow = table.tHead ? table.tHead.rows[0] : null;
+      if(!headRow) return;
+      Array.from(headRow.cells).forEach(function(th, idx){
+        th.style.cursor = 'pointer';
+        th.addEventListener('click', function(ev){
+          if(ev.target && (ev.target.tagName === 'INPUT' || ev.target.tagName === 'SELECT')) return;
+          var a = ev.target.closest('a');
+          if(a) ev.preventDefault();
+
+          var cur = th.getAttribute('data-expman-sort') || '';
+          var next = (cur === 'asc') ? 'desc' : 'asc';
+          Array.from(headRow.cells).forEach(function(h){ h.removeAttribute('data-expman-sort'); h.classList.remove('expman-sort-asc','expman-sort-desc'); });
+          th.setAttribute('data-expman-sort', next);
+          th.classList.add(next === 'asc' ? 'expman-sort-asc' : 'expman-sort-desc');
+
+          expmanSortTable(table, idx, next);
+        });
+      });
     });
   }
 
-  document.addEventListener("click",(e)=>{
-    const btn = e.target.closest(".expman-sort-btn");
-    if(!btn) return;
-    e.preventDefault();
-    const th = btn.closest("th");
-    const table = btn.closest("table");
-    if(!th || !table) return;
-    const key = th.getAttribute("data-sort-key");
-    if(!key) return;
-    const current = th.getAttribute("data-sort-order") || "asc";
-    const next = current === "asc" ? "desc" : "asc";
-    th.setAttribute("data-sort-order", next);
-    sortTableByKey(table, key, next);
-  });
-  document.addEventListener("input",(e)=>{
-    if(!e.target.matches(".expman-global-search")) return;
-    const table = e.target.closest("[data-expman-table-wrap]");
-    const tableEl = table ? table.querySelector("table") : null;
-    applyTextFilters(tableEl);
-  });
+  expmanBindSortableTables();
 
   // Bulk check all
   const all = document.getElementById("expman-bulk-check-all");
@@ -389,13 +444,6 @@ class Expman_Servers_UI {
       document.querySelectorAll(".expman-bulk-id").forEach(cb=>cb.checked = all.checked);
     });
   }
-  document.querySelectorAll(".expman-bulk-check-all-track").forEach(allTrack=>{
-    allTrack.addEventListener("change", ()=>{
-      const table = allTrack.closest("table");
-      if(!table) return;
-      table.querySelectorAll(".expman-bulk-id").forEach(cb=>cb.checked = allTrack.checked);
-    });
-  });
 
   // New server (inline) open/close
   const newWrap = document.getElementById("expman-new-server-inline");
@@ -461,48 +509,94 @@ class Expman_Servers_UI {
     return fetch(url).then(r=>r.json()).then(d => (d && d.items) ? d.items : []).catch(()=>[]);
   }
 
+  // Render results to <body> so they always appear above tables/rows (no clipping/stacking issues)
+  let customerDropdown = null;
+  let activeCustomerInput = null;
+
+  function ensureCustomerDropdown(){
+    if(customerDropdown) return customerDropdown;
+    customerDropdown = document.createElement("div");
+    customerDropdown.className = "expman-customer-dropdown";
+    customerDropdown.style.position = "fixed";
+    customerDropdown.style.zIndex = "2147483647";
+    document.body.appendChild(customerDropdown);
+    return customerDropdown;
+  }
+
+  function closeCustomerDropdown(){
+    if(!customerDropdown) return;
+    customerDropdown.style.display = "none";
+    customerDropdown.innerHTML = "";
+    activeCustomerInput = null;
+  }
+
+  function positionCustomerDropdown(input){
+    const dd = ensureCustomerDropdown();
+    const r = input.getBoundingClientRect();
+    dd.style.left = Math.round(r.left) + "px";
+    dd.style.top  = Math.round(r.bottom) + "px";
+    dd.style.width = Math.round(r.width) + "px";
+  }
+
+  function resolveFormForInput(input){
+    // Works for both: input inside <form> and inputs linked via form="id"
+    const formIdAttr = input.getAttribute("form");
+    if(formIdAttr){
+      const f = document.getElementById(formIdAttr);
+      if(f) return f;
+    }
+    return input.closest("form");
+  }
+
+  function setCustomerToForm(input, it){
+    const form = resolveFormForInput(input);
+    const formId = form ? (form.getAttribute("id") || "") : "";
+
+    input.value = (it.customer_number||"") + " - " + (it.customer_name||"");
+
+    const idField = (form ? form.querySelector("input[name=\"customer_id\"]") : null) || (formId ? document.querySelector('input[name="customer_id"][form="'+formId+'"]') : null);
+    if(idField) idField.value = it.id || "";
+
+    const numField = (form ? form.querySelector("input[name=\"customer_number\"]") : null) || (formId ? document.querySelector('input[name="customer_number"][form="'+formId+'"]') : null);
+    const nameField= (form ? form.querySelector("input[name=\"customer_name\"]") : null) || (formId ? document.querySelector('input[name="customer_name"][form="'+formId+'"]') : null);
+    if(numField) numField.value = it.customer_number || "";
+    if(nameField) nameField.value = it.customer_name || "";
+  }
+
   document.addEventListener("input", async (e)=>{
     const input = e.target.closest(".expman-customer-search");
     if(!input) return;
+    activeCustomerInput = input;
 
-    const form = input.closest("form");
-    const results = form ? form.querySelector(".expman-customer-results") : null;
-    if(!results) return;
-
-    results.innerHTML = "";
     const q = (input.value || "").trim();
-    if(q.length < 2) return;
+    if(q.length < 2){
+      closeCustomerDropdown();
+      return;
+    }
 
     const items = await fetchCustomers(q);
-    const box = document.createElement("div");
-    box.className = "expman-customer-box";
-    box.style.top = "0";
+    const dd = ensureCustomerDropdown();
+    dd.innerHTML = "";
+    positionCustomerDropdown(input);
+
+    if(!items.length){
+      dd.style.display = "none";
+      return;
+    }
 
     items.forEach(it=>{
       const b = document.createElement("button");
-      b.type="button";
-      b.style.display="block";
-      b.style.width="100%";
-      b.style.textAlign="right";
-      b.style.padding="6px 8px";
-      b.style.border="0";
-      b.style.background="transparent";
+      b.type = "button";
       b.textContent = (it.customer_number||"") + " - " + (it.customer_name||"");
       b.addEventListener("click", ()=>{
-        input.value = b.textContent;
-        const formId = form.getAttribute("id") || "";
-        const idField = form.querySelector("input[name=\"customer_id\"]") || (formId ? document.querySelector('input[name="customer_id"][form="'+formId+'"]') : null);
-        if(idField) idField.value = it.id || "";
-        const num = form.querySelector("input[name=\"customer_number\"]") || (formId ? document.querySelector('input[name="customer_number"][form="'+formId+'"]') : null);
-        const name= form.querySelector("input[name=\"customer_name\"]") || (formId ? document.querySelector('input[name="customer_name"][form="'+formId+'"]') : null);
-        if(num) num.value = it.customer_number || "";
-        if(name) name.value = it.customer_name || "";
-        results.innerHTML = "";
+        if(!activeCustomerInput) return;
+        setCustomerToForm(activeCustomerInput, it);
+        closeCustomerDropdown();
       });
-      box.appendChild(b);
+      dd.appendChild(b);
     });
 
-    results.appendChild(box);
+    dd.style.display = "block";
   });
 
   document.addEventListener("keydown",(e)=>{
@@ -515,20 +609,12 @@ class Expman_Servers_UI {
 
   document.addEventListener("click",(e)=>{
     if(e.target.closest(".expman-customer-search")) return;
-    document.querySelectorAll(".expman-customer-results").forEach(r=>r.innerHTML="");
+    if(e.target.closest(".expman-customer-dropdown")) return;
+    closeCustomerDropdown();
   });
 
-  // Sync controls visibility
-  const syncToggle = document.getElementById("expman-sync-toggle");
-  function applySyncToggle(){
-    const root = document.querySelector(".expman-servers");
-    if(!root || !syncToggle) return;
-    root.classList.toggle("expman-sync-hidden", !syncToggle.checked);
-  }
-  if(syncToggle){
-    syncToggle.addEventListener("change", applySyncToggle);
-    applySyncToggle();
-  }
+  window.addEventListener("scroll", ()=>{ if(activeCustomerInput) positionCustomerDropdown(activeCustomerInput); }, true);
+  window.addEventListener("resize", ()=>{ if(activeCustomerInput) positionCustomerDropdown(activeCustomerInput); });
 
   // Init
   setActiveSummary("all");
@@ -578,19 +664,6 @@ JS;
         );
     }
 
-    private function render_sortable_th( $key, $label, $orderby, $order ) {
-        $class_map = array(
-            'customer_number_snapshot' => 'expman-col-customer-num',
-            'customer_name_snapshot'   => 'expman-col-customer-name',
-            'service_tag'              => 'expman-col-service-tag',
-            'operating_system'         => 'expman-col-os',
-            'ending_on'                => 'expman-col-date',
-            'days_to_end'              => 'expman-col-days',
-        );
-        $class_attr = isset( $class_map[ $key ] ) ? ' class="' . esc_attr( $class_map[ $key ] ) . '"' : '';
-        echo '<th' . $class_attr . ' data-sort-key="' . esc_attr( $key ) . '" data-sort-order="asc"><button type="button" class="expman-sort-btn" style="all:unset;cursor:pointer;color:inherit;">' . esc_html( $label ) . '</button></th>';
-    }
-
     private function render_main_tab() {
         $actions = $this->page->get_actions();
         $filters = $this->common_filters_from_get();
@@ -605,17 +678,20 @@ JS;
         $page_num = max( 1, intval( $_GET['paged'] ?? 1 ) );
         $offset = ( $page_num - 1 ) * $per_page;
 
-        $total = $actions->get_servers_total( $filters, false, 0 );
-        $rows = $actions->get_servers_rows( $filters, $orderby, $order, false, $per_page, $offset, 0 );
+        $total = $actions->get_servers_total( $filters, false );
+        $rows = $actions->get_servers_rows( $filters, $orderby, $order, false, $per_page, $offset );
         $thresholds = $actions->get_summary_counts();
 
         $settings = $this->page->get_dell_settings();
         $contact_name  = sanitize_text_field( $settings['contact_name'] ?? '' );
         $contact_email = sanitize_email( $settings['contact_email'] ?? '' );
+        $hide_sync_buttons = ( ! empty( $settings['hide_sync_buttons'] ) ) || ( (int) get_option( 'expman_dell_hide_sync_buttons', 0 ) === 1 );
 
         echo '<div class="expman-actionbar">';
         echo '<button type="button" id="expman-open-new-server" class="expman-btn">שרת חדש</button>';
-        echo '<button type="submit" class="expman-btn secondary expman-sync-control" form="expman-servers-bulk-form">Sync מסומנים</button>';
+        if ( ! $hide_sync_buttons ) {
+            echo '<button type="submit" class="expman-btn secondary" form="expman-servers-bulk-form">Sync מסומנים</button>';
+        }
         echo '<form method="get" style="margin-right:auto;display:flex;align-items:center;gap:8px;">';
         echo '<input type="hidden" name="page" value="' . esc_attr( sanitize_text_field( $_GET['page'] ?? '' ) ) . '">';
         echo '<input type="hidden" name="tab" value="main">';
@@ -630,12 +706,14 @@ JS;
         echo '</form>';
         echo '</div>';
 
-        // Bulk form
-        echo '<form method="post" id="expman-servers-bulk-form">';
-        wp_nonce_field( 'expman_sync_servers_bulk', 'expman_sync_servers_bulk_nonce' );
-        echo '<input type="hidden" name="expman_action" value="sync_bulk">';
-        echo '<input type="hidden" name="tab" value="main">';
-        echo '</form>';
+        // Bulk form (used by "Sync מסומנים")
+        if ( ! $hide_sync_buttons ) {
+            echo '<form method="post" id="expman-servers-bulk-form">';
+            wp_nonce_field( 'expman_sync_servers_bulk', 'expman_sync_servers_bulk_nonce' );
+            echo '<input type="hidden" name="expman_action" value="sync_bulk">';
+            echo '<input type="hidden" name="tab" value="main">';
+            echo '</form>';
+        }
 
         // New server inline form (within page)
         echo '<div id="expman-new-server-inline" style="display:none;margin:12px 0;padding:12px;border:1px solid #d9e3f2;border-radius:12px;background:#fff;">';
@@ -644,22 +722,17 @@ JS;
         echo '</div>';
 
         // Table
-        echo '<div class="expman-table-wrap" data-expman-table-wrap>';
-        echo '<h3 style="margin:0 0 8px;">טבלה ראשית</h3>';
-        echo '<div class="expman-search-wrap">';
-        echo '<label style="font-weight:600;">חיפוש כללי</label>';
-        echo '<input type="text" class="expman-global-search expman-search-input" placeholder="חיפוש לפי כל ערך בטבלה...">';
-        echo '</div>';
-        echo '<table class="widefat" style="margin-bottom:10px;" data-expman-table="main">';
+        echo '<div class="expman-table-wrap">';
+        echo '<table class="widefat expman-sortable" style="margin-bottom:10px;">';
         echo '<thead>';
         echo '<tr>';
         echo '<th style="width:28px;"><input type="checkbox" id="expman-bulk-check-all"></th>';
-        $this->render_sortable_th( 'customer_number_snapshot', 'מספר לקוח', $orderby, $order );
-        $this->render_sortable_th( 'customer_name_snapshot', 'שם לקוח', $orderby, $order );
-        $this->render_sortable_th( 'service_tag', 'Service Tag', $orderby, $order );
-        $this->render_sortable_th( 'operating_system', 'מערכת הפעלה', $orderby, $order );
-        $this->render_sortable_th( 'ending_on', 'Ending On', $orderby, $order );
-        $this->render_sortable_th( 'days_to_end', 'ימים', $orderby, $order );
+        echo '<th class="expman-col-customer-num">מספר לקוח</th>';
+        echo '<th class="expman-col-customer-name">שם לקוח</th>';
+        echo '<th class="expman-col-service-tag">Service Tag</th>';
+        echo '<th class="expman-col-os">מערכת הפעלה</th>';
+        echo '<th class="expman-col-date">Ending On</th>';
+        echo '<th class="expman-col-days">ימים</th>';
         echo '</tr>';
 
         echo '<tr class="expman-filter-row">';
@@ -697,14 +770,6 @@ JS;
 
             $days_class = 'expman-days-' . $status;
             $days_label = $days !== null && $row->ending_on ? (string) $days : '—';
-            $search_value = mb_strtolower( trim( implode( ' ', array(
-                (string) $row->customer_number_snapshot,
-                (string) $row->customer_name_snapshot,
-                (string) $row->service_tag,
-                (string) $row->operating_system,
-                (string) self::fmt_date_short( $row->ending_on ),
-                (string) $days_label,
-            ) ) ) );
 
             $mailto_quote = '';
             if ( $contact_email !== '' ) {
@@ -736,33 +801,29 @@ JS;
             echo ' data-service-tag="' . esc_attr( mb_strtolower( (string) $row->service_tag ) ) . '"';
             echo ' data-operating-system="' . esc_attr( mb_strtolower( (string) $row->operating_system ) ) . '"';
             echo ' data-ending-on="' . esc_attr( mb_strtolower( (string) $row->ending_on ) ) . '"';
-            echo ' data-customer_number_snapshot="' . esc_attr( mb_strtolower( (string) $row->customer_number_snapshot ) ) . '"';
-            echo ' data-customer_name_snapshot="' . esc_attr( mb_strtolower( (string) $row->customer_name_snapshot ) ) . '"';
-            echo ' data-service_tag="' . esc_attr( mb_strtolower( (string) $row->service_tag ) ) . '"';
-            echo ' data-operating_system="' . esc_attr( mb_strtolower( (string) $row->operating_system ) ) . '"';
-            echo ' data-ending_on="' . esc_attr( mb_strtolower( (string) $row->ending_on ) ) . '"';
-            echo ' data-days_to_end="' . esc_attr( (string) $days_label ) . '"';
-            echo ' data-expman-search="' . esc_attr( $search_value ) . '">';
+            echo '>';
             echo '<td><input type="checkbox" class="expman-bulk-id" form="expman-servers-bulk-form" name="server_ids[]" value="' . esc_attr( $row->id ) . '"></td>';
             echo '<td>' . esc_html( $row->customer_number_snapshot ) . '</td>';
             echo '<td>' . esc_html( $row->customer_name_snapshot ) . '</td>';
             echo '<td>' . esc_html( $row->service_tag ) . '</td>';
             echo '<td>' . esc_html( $row->operating_system ) . '</td>';
             echo '<td>' . esc_html( self::fmt_date_short( $row->ending_on ) ) . '</td>';
-            echo '<td><span class="expman-days-pill ' . esc_attr( $days_class ) . '">' . esc_html( $days_label ) . '</span></td>';
+                        echo '<td><span class="expman-days-pill ' . esc_attr( $days_class ) . '">' . esc_html( $days_label ) . '</span></td>';
             echo '</tr>';
 
-            echo '<tr class="expman-row-actions" data-for="' . esc_attr( $row->id ) . '">';
+            echo '<tr class="expman-row-actions" data-for="' . esc_attr( $row->id ) . '" style="display:none;">';
             echo '<td colspan="7">';
             echo '<div style="display:flex;gap:10px;align-items:center;justify-content:flex-start;flex-wrap:wrap;">';
-            echo '<span class="expman-sync-control"><strong>Last Sync:</strong> ' . esc_html( self::fmt_datetime_short( $row->last_sync_at ) ) . '</span>';
+            echo '<span><strong>Last Sync:</strong> ' . esc_html( self::fmt_datetime_short( $row->last_sync_at ) ) . '</span>';
             echo '<div style="display:flex;gap:8px;align-items:center;">';
             echo '<button type="button" class="button expman-edit-toggle" data-id="' . esc_attr( $row->id ) . '">ערוך</button>';
             echo '<form method="post" style="display:inline;margin:0;">';
-            wp_nonce_field( 'expman_servers_row_action', 'expman_servers_row_action_nonce' );
+            echo '<input type="hidden" name="expman_servers_row_action_nonce" value="' . esc_attr( wp_create_nonce( 'expman_servers_row_action' ) ) . '">';
             echo '<input type="hidden" name="tab" value="main">';
             echo '<input type="hidden" name="server_id" value="' . esc_attr( $row->id ) . '">';
-            echo '<button type="submit" name="expman_action" value="sync_single" class="button expman-sync-control">Sync</button> ';
+            if ( ! $hide_sync_buttons ) {
+                echo '<button type="submit" name="expman_action" value="sync_single" class="button">Sync</button> ';
+            }
             echo '<button type="submit" name="expman_action" value="trash_server" class="button" onclick="return confirm(\'להעביר לסל המחזור?\');">מחק</button>';
             echo '</form>';
             echo '</div>';
@@ -777,9 +838,12 @@ JS;
             echo '<div><strong>Ship Date:</strong> ' . esc_html( self::fmt_date_short( $row->ship_date ) ) . '</div>';
             echo '<div><strong>מערכת הפעלה:</strong> ' . esc_html( $row->operating_system ) . '</div>';
             echo '<div><strong>סוג שירות:</strong> ' . esc_html( $row->service_level ) . '</div>';
-            echo '<div><strong>דגם שרת:</strong> ' . esc_html( $row->server_model ) . '</div>';
-            if ( intval( $row->temp_notice_enabled ) ) {
-                echo '<div><strong>הודעה זמנית:</strong> ' . esc_html( $row->temp_notice_text ) . '</div>';
+                        echo '<div><strong>דגם שרת:</strong> ' . esc_html( $row->server_model ) . '</div>';
+            $tn_enabled = intval( $row->temp_notice_enabled );
+            $tn_text    = trim( (string) $row->temp_notice_text );
+            if ( $tn_enabled || $tn_text !== '' ) {
+                $tn_disp = ( $tn_text !== '' ) ? esc_html( $tn_text ) : 'מופעל';
+                echo '<div><strong>הודעה זמנית:</strong> ' . $tn_disp . '</div>';
             }
             echo '<div style="grid-column:span 2;"><strong>הערות:</strong> ' . esc_html( $row->notes ) . '</div>';
             if ( $mailto_quote !== '' ) {
@@ -814,128 +878,6 @@ JS;
             }
             echo '</div>';
         }
-        $track_rows = $actions->get_servers_rows( $filters, $orderby, $order, false, 0, 0, 1 );
-        echo '<h3 style="margin:16px 0 8px;">שרתים במעקב</h3>';
-        echo '<table class="widefat" style="margin-bottom:10px;" data-expman-table="track">';
-        echo '<thead>';
-        echo '<tr>';
-        echo '<th style="width:28px;"><input type="checkbox" class="expman-bulk-check-all-track"></th>';
-        $this->render_sortable_th( 'customer_number_snapshot', 'מספר לקוח', $orderby, $order );
-        $this->render_sortable_th( 'customer_name_snapshot', 'שם לקוח', $orderby, $order );
-        $this->render_sortable_th( 'service_tag', 'Service Tag', $orderby, $order );
-        $this->render_sortable_th( 'operating_system', 'מערכת הפעלה', $orderby, $order );
-        $this->render_sortable_th( 'ending_on', 'Ending On', $orderby, $order );
-        $this->render_sortable_th( 'days_to_end', 'ימים', $orderby, $order );
-        echo '</tr>';
-
-        echo '<tr class="expman-filter-row">';
-        echo '<th></th>';
-        echo '<th><input type="text" class="expman-filter-input" data-filter="customer-number" placeholder="סינון"></th>';
-        echo '<th><input type="text" class="expman-filter-input" data-filter="customer-name" placeholder="סינון"></th>';
-        echo '<th><input type="text" class="expman-filter-input" data-filter="service-tag" placeholder="סינון"></th>';
-        echo '<th><input type="text" class="expman-filter-input" data-filter="operating-system" placeholder="סינון"></th>';
-        echo '<th><input type="text" class="expman-filter-input" data-filter="ending-on" placeholder="סינון"></th>';
-        echo '<th></th>';
-        echo '</tr>';
-        echo '</thead><tbody>';
-
-        if ( empty( $track_rows ) ) {
-            echo '<tr><td colspan="7" style="text-align:center;">אין נתונים להצגה.</td></tr>';
-        }
-
-        $track_index = 0;
-        foreach ( (array) $track_rows as $row ) {
-            $track_index++;
-            $row_class = ( $track_index % 2 ) ? '' : 'expman-row-alt';
-            $days = isset( $row->days_to_end ) ? intval( $row->days_to_end ) : null;
-            $status = 'unknown';
-            if ( $days !== null && $row->ending_on ) {
-                if ( $days <= intval( $thresholds['red_threshold'] ) ) {
-                    $status = 'red';
-                } elseif ( $days <= intval( $thresholds['yellow_threshold'] ) ) {
-                    $status = 'yellow';
-                } else {
-                    $status = 'green';
-                }
-            }
-            $days_class = 'expman-days-' . $status;
-            $days_label = $days !== null && $row->ending_on ? (string) $days : '—';
-            $search_value = mb_strtolower( trim( implode( ' ', array(
-                (string) $row->customer_number_snapshot,
-                (string) $row->customer_name_snapshot,
-                (string) $row->service_tag,
-                (string) $row->operating_system,
-                (string) self::fmt_date_short( $row->ending_on ),
-                (string) $days_label,
-            ) ) ) );
-
-            echo '<tr class="expman-row ' . esc_attr( $row_class ) . '" data-expman-status="' . esc_attr( $status ) . '" data-expman-row-id="' . esc_attr( $row->id ) . '"';
-            echo ' data-customer-number="' . esc_attr( mb_strtolower( (string) $row->customer_number_snapshot ) ) . '"';
-            echo ' data-customer-name="' . esc_attr( mb_strtolower( (string) $row->customer_name_snapshot ) ) . '"';
-            echo ' data-service-tag="' . esc_attr( mb_strtolower( (string) $row->service_tag ) ) . '"';
-            echo ' data-operating-system="' . esc_attr( mb_strtolower( (string) $row->operating_system ) ) . '"';
-            echo ' data-ending-on="' . esc_attr( mb_strtolower( (string) $row->ending_on ) ) . '"';
-            echo ' data-customer_number_snapshot="' . esc_attr( mb_strtolower( (string) $row->customer_number_snapshot ) ) . '"';
-            echo ' data-customer_name_snapshot="' . esc_attr( mb_strtolower( (string) $row->customer_name_snapshot ) ) . '"';
-            echo ' data-service_tag="' . esc_attr( mb_strtolower( (string) $row->service_tag ) ) . '"';
-            echo ' data-operating_system="' . esc_attr( mb_strtolower( (string) $row->operating_system ) ) . '"';
-            echo ' data-ending_on="' . esc_attr( mb_strtolower( (string) $row->ending_on ) ) . '"';
-            echo ' data-days_to_end="' . esc_attr( (string) $days_label ) . '"';
-            echo ' data-expman-search="' . esc_attr( $search_value ) . '">';
-            echo '<td><input type="checkbox" class="expman-bulk-id" form="expman-servers-bulk-form" name="server_ids[]" value="' . esc_attr( $row->id ) . '"></td>';
-            echo '<td>' . esc_html( $row->customer_number_snapshot ) . '</td>';
-            echo '<td>' . esc_html( $row->customer_name_snapshot ) . '</td>';
-            echo '<td>' . esc_html( $row->service_tag ) . '</td>';
-            echo '<td>' . esc_html( $row->operating_system ) . '</td>';
-            echo '<td>' . esc_html( self::fmt_date_short( $row->ending_on ) ) . '</td>';
-            echo '<td><span class="expman-days-pill ' . esc_attr( $days_class ) . '">' . esc_html( $days_label ) . '</span></td>';
-            echo '</tr>';
-
-            echo '<tr class="expman-row-actions" data-for="' . esc_attr( $row->id ) . '">';
-            echo '<td colspan="7">';
-            echo '<div style="display:flex;gap:10px;align-items:center;justify-content:flex-start;flex-wrap:wrap;">';
-            echo '<span class="expman-sync-control"><strong>Last Sync:</strong> ' . esc_html( self::fmt_datetime_short( $row->last_sync_at ) ) . '</span>';
-            echo '<div style="display:flex;gap:8px;align-items:center;">';
-            echo '<button type="button" class="button expman-edit-toggle" data-id="' . esc_attr( $row->id ) . '">ערוך</button>';
-            echo '<form method="post" style="display:inline;margin:0;">';
-            wp_nonce_field( 'expman_servers_row_action', 'expman_servers_row_action_nonce' );
-            echo '<input type="hidden" name="tab" value="main">';
-            echo '<input type="hidden" name="server_id" value="' . esc_attr( $row->id ) . '">';
-            echo '<button type="submit" name="expman_action" value="sync_single" class="button expman-sync-control">Sync</button> ';
-            echo '<button type="submit" name="expman_action" value="trash_server" class="button" onclick="return confirm(\'להעביר לסל המחזור?\');">מחק</button>';
-            echo '</form>';
-            echo '</div>';
-            echo '</div>';
-            echo '</td>';
-            echo '</tr>';
-
-            echo '<tr class="expman-details" data-for="' . esc_attr( $row->id ) . '" style="display:none;">';
-            echo '<td colspan="7">';
-            echo '<div style="display:grid;grid-template-columns:repeat(3,minmax(160px,1fr));gap:12px;">';
-            echo '<div><strong>Express Service Code:</strong> ' . esc_html( $row->express_service_code ) . '</div>';
-            echo '<div><strong>Ship Date:</strong> ' . esc_html( self::fmt_date_short( $row->ship_date ) ) . '</div>';
-            echo '<div><strong>מערכת הפעלה:</strong> ' . esc_html( $row->operating_system ) . '</div>';
-            echo '<div><strong>סוג שירות:</strong> ' . esc_html( $row->service_level ) . '</div>';
-            echo '<div><strong>דגם שרת:</strong> ' . esc_html( $row->server_model ) . '</div>';
-            if ( intval( $row->temp_notice_enabled ) ) {
-                echo '<div><strong>הודעה זמנית:</strong> ' . esc_html( $row->temp_notice_text ) . '</div>';
-            }
-            echo '<div style="grid-column:span 2;"><strong>הערות:</strong> ' . esc_html( $row->notes ) . '</div>';
-            if ( $mailto_quote !== '' ) {
-                echo '<div><a class="button" href="' . esc_attr( $mailto_quote ) . '">בקשת הצעה</a></div>';
-            }
-            echo '</div>';
-            echo '</td>';
-            echo '</tr>';
-
-            echo '<tr class="expman-inline-form" data-for="' . esc_attr( $row->id ) . '" style="display:none;">';
-            echo '<td colspan="7">';
-            $this->render_form( intval( $row->id ), $row, false );
-            echo '</td>';
-            echo '</tr>';
-        }
-
-        echo '</tbody></table>';
         echo '</div>';
     }
 
@@ -954,7 +896,6 @@ JS;
             'notes' => '',
             'temp_notice_enabled' => 0,
             'temp_notice_text' => '',
-            'track_only' => 0,
         );
 
         if ( $row_obj ) {
@@ -971,12 +912,11 @@ JS;
             $row['notes'] = (string) ( $row_obj->notes ?? '' );
             $row['temp_notice_enabled'] = intval( $row_obj->temp_notice_enabled ?? 0 );
             $row['temp_notice_text'] = (string) ( $row_obj->temp_notice_text ?? '' );
-            $row['track_only'] = intval( $row_obj->track_only ?? 0 );
         }
 
         $container_style = ( $is_new_modal || $is_new_inline ) ? '' : 'margin:0;';
         echo '<style>
-        .expman-servers-form{background:#fff;border:1px solid #e3e3e3;border-radius:12px;padding:14px;overflow:visible;position:relative}
+        .expman-servers-form{background:#fff;border:1px solid #e3e3e3;border-radius:12px;padding:14px;overflow:visible}
         .expman-servers-grid{display:grid;grid-template-columns:repeat(3,minmax(180px,1fr));gap:12px;align-items:end;overflow:visible}
             .expman-servers-grid .full{grid-column:span 3}
             .expman-servers-grid label{display:block;font-size:12px;color:#333;margin-bottom:4px;font-weight:700}
@@ -987,19 +927,18 @@ JS;
         </style>';
 
         echo '<form method="post" class="expman-servers-form" style="' . esc_attr( $container_style ) . '">';
-        wp_nonce_field( 'expman_save_server', 'expman_save_server_nonce' );
+        echo '<input type="hidden" name="expman_save_server_nonce" value="' . esc_attr( wp_create_nonce( 'expman_save_server' ) ) . '">';
         echo '<input type="hidden" name="expman_action" value="save_server">';
         echo '<input type="hidden" name="tab" value="main">';
         echo '<input type="hidden" name="server_id" value="' . esc_attr( $id ) . '">';
 
         echo '<div class="expman-servers-grid">';
 
-        echo '<div class="full expman-customer-field" style="position:relative;">';
+        echo '<div class="full">';
         echo '<label>לקוח (חיפוש לפי שם/מספר)</label>';
         echo '<input type="hidden" name="customer_id" value="' . esc_attr( $row['customer_id'] ) . '">';
         echo '<input type="text" class="expman-customer-search" placeholder="הקלד חלק מהשם או המספר..." autocomplete="off" value="">';
-        echo '<div class="expman-customer-results" style="margin-top:6px;"></div>';
-        echo '</div>';
+                echo '</div>';
 
         echo '<div><label>מספר לקוח</label><input type="text" name="customer_number" value="' . esc_attr( $row['customer_number_snapshot'] ) . '"></div>';
         echo '<div><label>שם לקוח</label><input type="text" name="customer_name" value="' . esc_attr( $row['customer_name_snapshot'] ) . '"></div>';
@@ -1042,8 +981,7 @@ JS;
         }
         echo '</select></div>';
         echo '<div><label>דגם שרת</label><input type="text" name="server_model" value="' . esc_attr( $row['server_model'] ) . '"></div>';
-        echo '<div><label>שרת במעקב</label><label style="font-weight:600;"><input type="checkbox" name="track_only" value="1"' . checked( $row['track_only'], 1, false ) . '> כן</label></div>';
-        echo '<div class="expman-sync-control"><label>סנכרון אחרי שמירה</label><label style="font-weight:600;"><input type="checkbox" name="sync_now" value="1"> כן</label></div>';
+        echo '<div><label>סנכרון אחרי שמירה</label><label style="font-weight:600;"><input type="checkbox" name="sync_now" value="1"> כן</label></div>';
 
         echo '<div class="full"><label>הערות</label><textarea name="notes" rows="2">' . esc_textarea( $row['notes'] ) . '</textarea></div>';
 
@@ -1071,6 +1009,7 @@ JS;
         $client_id = (string) ( $settings['client_id'] ?? '' );
         $client_secret = (string) ( $settings['client_secret'] ?? '' );
         $api_key = (string) ( $settings['api_key'] ?? '' );
+        $hide_sync_buttons = ( ! empty( $settings['hide_sync_buttons'] ) ) || ( (int) get_option( 'expman_dell_hide_sync_buttons', 0 ) === 1 );
         $red_days = intval( $settings['red_days'] ?? 30 );
         $yellow_days = intval( $settings['yellow_days'] ?? 60 );
         $contacts = array();
@@ -1092,24 +1031,21 @@ JS;
             }
         }
 
-        echo '<div class="expman-sync-control">';
         echo '<h3>הגדרות Dell TechDirect</h3>';
-        echo '<label style="display:flex;align-items:center;gap:6px;font-weight:600;margin:8px 0;">';
-        echo '<input type="checkbox" id="expman-sync-toggle" checked> הצג כפתורי סנכרון</label>';
-        echo '<div class="expman-sync-control">';
         echo '<form method="post" style="max-width:520px;">';
-        wp_nonce_field( 'expman_save_dell_settings', 'expman_save_dell_settings_nonce' );
+        echo '<input type="hidden" name="expman_save_dell_settings_nonce" value="' . esc_attr( wp_create_nonce( 'expman_save_dell_settings' ) ) . '">';
         echo '<input type="hidden" name="expman_action" value="save_dell_settings">';
         echo '<input type="hidden" name="tab" value="settings">';
         echo '<table class="form-table"><tbody>';
         echo '<tr><th>Client ID</th><td><input type="text" name="dell_client_id" value="' . esc_attr( $client_id ) . '" class="regular-text"></td></tr>';
         echo '<tr><th>Client Secret</th><td><input type="password" name="dell_client_secret" value="' . esc_attr( $client_secret ) . '" class="regular-text"></td></tr>';
         echo '<tr><th>API Key</th><td><input type="text" name="dell_api_key" value="' . esc_attr( $api_key ) . '" class="regular-text"></td></tr>';
+        echo '<tr><th>הסתר סנכרון מול DELL</th><td><label style="font-weight:600;"><input type="checkbox" name="dell_hide_sync_buttons" value="1"' . checked( $hide_sync_buttons, true, false ) . '> הסתר את הכפתורים "Sync מסומנים" ו-"Sync" בשורות</label></td></tr>';
         echo '</tbody></table>';
 
         echo '<h4 style="margin:16px 0 8px;">אנשי קשר להצעות</h4>';
         echo '<p style="margin:0 0 8px;color:#666;">האיש קשר הראשון ברשימה משמש כברירת מחדל לכפתור "בקשת הצעה".</p>';
-        echo '<table class="widefat" id="dell-contacts-table" style="max-width:520px;">';
+        echo '<table class="widefat expman-sortable" id="dell-contacts-table" style="max-width:520px;">';
         echo '<thead><tr><th>שם</th><th>מייל</th><th style="width:90px;">פעולה</th></tr></thead><tbody>';
         if ( empty( $contacts ) ) {
             $contacts = array( array( 'name' => '', 'email' => '' ) );
@@ -1173,10 +1109,10 @@ JS;
         echo '<hr style="margin:24px 0;">';
         echo '<h3 style="display:flex;align-items:center;gap:10px;">מערכות הפעלה <button type="button" class="button" id="expman-toggle-os">הצג/הסתר רשימה</button></h3>';
         echo '<form method="post" style="max-width:520px;">';
-        wp_nonce_field( 'expman_save_dell_settings', 'expman_save_dell_settings_nonce' );
+        echo '<input type="hidden" name="expman_save_dell_settings_nonce" value="' . esc_attr( wp_create_nonce( 'expman_save_dell_settings' ) ) . '">';
         echo '<input type="hidden" name="expman_action" value="save_dell_settings">';
         echo '<input type="hidden" name="tab" value="settings">';
-        echo '<table class="widefat" id="expman-os-table" style="display:none;"><thead><tr><th>מערכת הפעלה</th><th style="width:90px;">פעולה</th></tr></thead><tbody>';
+        echo '<table class="widefat expman-sortable" id="expman-os-table" style="display:none;"><thead><tr><th>מערכת הפעלה</th><th style="width:90px;">פעולה</th></tr></thead><tbody>';
         foreach ( $os_list as $os ) {
             echo '<tr>';
             echo '<td><input type="text" name="dell_os_list[]" value="' . esc_attr( (string) $os ) . '" class="regular-text" style="width:100%;"></td>';
@@ -1223,7 +1159,6 @@ JS;
             });
         })();
         </script>';
-        echo '</div>';
 
         echo '<hr style="margin:24px 0;">';
         echo '<h3>ייבוא / ייצוא לאקסל (CSV)</h3>';
@@ -1239,7 +1174,7 @@ JS;
         wp_nonce_field( 'expman_import_servers_excel', 'expman_import_servers_excel_nonce' );
         echo '<input type="hidden" name="expman_action" value="import_excel_settings">';
         echo '<input type="hidden" name="tab" value="settings">';
-        echo '<input type="file" name="servers_excel_file" accept=".csv">';
+        echo '<input type="file" name="servers_excel_file" accept=".csv,.xlsx">';
         echo '<button type="submit" class="button">ייבוא מאקסל</button>';
         echo '</form>';
 
@@ -1248,7 +1183,7 @@ JS;
         wp_nonce_field( 'expman_import_servers_direct', 'expman_import_servers_direct_nonce' );
         echo '<input type="hidden" name="expman_action" value="import_csv_direct">';
         echo '<input type="hidden" name="tab" value="settings">';
-        echo '<input type="file" name="servers_direct_file" accept=".csv">';
+        echo '<input type="file" name="servers_direct_file" accept=".csv,.xlsx">';
         echo '<button type="submit" class="button">ייבוא ישיר לטבלה הראשית</button>';
         echo '</form>';
     }
@@ -1259,7 +1194,7 @@ JS;
         $rows = $actions->get_logs();
 
         echo '<h3>לוגים</h3>';
-        echo '<table class="widefat expman-assign-table">';
+        echo '<table class="widefat expman-sortable">';
         echo '<thead><tr><th>תאריך</th><th>לקוח</th><th>Service Tag</th><th>פעולה</th><th>רמה</th><th>הודעה</th><th>פרטים</th></tr></thead><tbody>';
         if ( empty( $rows ) ) {
             echo '<tr><td colspan="7" style="text-align:center;">אין לוגים להצגה.</td></tr>';
@@ -1290,7 +1225,7 @@ JS;
         echo '<button type="submit" class="button" onclick="return confirm(\'לרוקן את סל המחזור?\');">רוקן סל מחזור</button>';
         echo '</form>';
 
-        echo '<table class="widefat">';
+        echo '<table class="widefat expman-sortable">';
         echo '<thead><tr><th>לקוח</th><th>Service Tag</th><th>נמחק בתאריך</th><th class="expman-align-left">פעולות</th></tr></thead><tbody>';
         if ( empty( $rows ) ) {
             echo '<tr><td colspan="4" style="text-align:center;">סל המחזור ריק.</td></tr>';
@@ -1302,14 +1237,14 @@ JS;
             echo '<td>' . esc_html( self::fmt_datetime_short( $row->deleted_at ) ) . '</td>';
             echo '<td class="expman-align-left" style="white-space:nowrap;">';
             echo '<form method="post" style="display:inline;">';
-            wp_nonce_field( 'expman_restore_server', 'expman_restore_server_nonce' );
+        echo '<input type="hidden" name="expman_restore_server_nonce" value="' . esc_attr( wp_create_nonce( 'expman_restore_server' ) ) . '">';
             echo '<input type="hidden" name="expman_action" value="restore_server">';
             echo '<input type="hidden" name="tab" value="trash">';
             echo '<input type="hidden" name="server_id" value="' . esc_attr( $row->id ) . '">';
             echo '<button type="submit" class="button">שחזור</button>';
             echo '</form> ';
             echo '<form method="post" style="display:inline;" onsubmit="return confirm(\'למחוק לצמיתות?\');">';
-            wp_nonce_field( 'expman_delete_server_permanently', 'expman_delete_server_permanently_nonce' );
+        echo '<input type="hidden" name="expman_delete_server_permanently_nonce" value="' . esc_attr( wp_create_nonce( 'expman_delete_server_permanently' ) ) . '">';
             echo '<input type="hidden" name="expman_action" value="delete_server_permanently">';
             echo '<input type="hidden" name="tab" value="trash">';
             echo '<input type="hidden" name="server_id" value="' . esc_attr( $row->id ) . '">';
@@ -1330,8 +1265,8 @@ JS;
         wp_nonce_field( 'expman_import_servers_csv', 'expman_import_servers_csv_nonce' );
         echo '<input type="hidden" name="expman_action" value="import_csv">';
         echo '<input type="hidden" name="tab" value="assign">';
-        echo '<input type="file" name="servers_file" accept=".csv">';
-        echo '<button type="submit" class="button">ייבוא CSV</button>';
+        echo '<input type="file" name="servers_file" accept=".csv,.xlsx">';
+        echo '<button type="submit" class="button">ייבוא CSV/XLSX</button>';
         echo '</form>';
 
         echo '<form method="post" style="margin-bottom:16px;">';
@@ -1354,40 +1289,37 @@ JS;
         }
 
         echo '<style>
-        .expman-assign-form{display:flex;gap:8px;align-items:center;flex-wrap:nowrap;position:relative;z-index:2;}
+        .expman-assign-form{display:flex;gap:8px;align-items:center;flex-wrap:nowrap;position:relative;}
         .expman-assign-form input[type="text"]{height:28px;}
         .expman-assign-form .expman-customer-search{min-width:220px;}
         .expman-assign-field{width:100%;box-sizing:border-box;height:28px;}
-        .expman-assign-form .expman-customer-results{position:absolute;right:0;left:0;top:100%;z-index:99999;}
         @media (max-width: 900px){ .expman-assign-form{flex-wrap:wrap;} }
         </style>';
 
-        echo '<table class="widefat">';
+        echo '<table class="widefat expman-sortable">';
         echo '<thead><tr><th>חיפוש לקוח</th><th>מספר לקוח</th><th>שם לקוח</th><th>Service Tag</th><th>Ending On</th><th>הערות</th><th class="expman-align-left">פעולות</th></tr></thead><tbody>';
         foreach ( (array) $rows as $row ) {
             $form_id = 'expman-assign-' . intval( $row->id );
-            $ending_on_ui = self::fmt_date_short( $row->ending_on );
             echo '<tr>';
             echo '<td>';
             echo '<form method="post" id="' . esc_attr( $form_id ) . '" class="expman-assign-form">';
-            wp_nonce_field( 'expman_assign_servers_stage', 'expman_assign_servers_stage_nonce' );
+            echo '<input type="hidden" name="expman_assign_servers_stage_nonce" value="' . esc_attr( wp_create_nonce( 'expman_assign_servers_stage' ) ) . '">';
             echo '<input type="hidden" name="expman_action" value="assign_import_stage">';
             echo '<input type="hidden" name="tab" value="assign">';
             echo '<input type="hidden" name="stage_id" value="' . esc_attr( $row->id ) . '">';
             echo '<input type="hidden" name="customer_id" value="">';
             echo '<input type="text" class="expman-customer-search" placeholder="חפש לקוח..." autocomplete="off">';
-            echo '<div class="expman-customer-results"></div>';
-            echo '</form>';
+                        echo '</form>';
             echo '</td>';
             echo '<td><input type="text" class="expman-assign-field" name="customer_number" form="' . esc_attr( $form_id ) . '" value="' . esc_attr( $row->customer_number ) . '"></td>';
             echo '<td><input type="text" class="expman-assign-field" name="customer_name" form="' . esc_attr( $form_id ) . '" value="' . esc_attr( $row->customer_name ) . '"></td>';
             echo '<td><input type="text" class="expman-assign-field" name="service_tag" form="' . esc_attr( $form_id ) . '" value="' . esc_attr( $row->service_tag ) . '"></td>';
-            echo '<td><input type="text" class="expman-assign-field expman-date-input" name="ending_on" form="' . esc_attr( $form_id ) . '" value="' . esc_attr( $ending_on_ui ) . '"></td>';
+            echo '<td><input type="text" class="expman-assign-field" form="' . esc_attr( $form_id ) . '" value="' . esc_attr( self::fmt_date_short( $row->ending_on ?? '' ) ) . '" readonly></td>';
             echo '<td><input type="text" class="expman-assign-field" name="notes" form="' . esc_attr( $form_id ) . '" value="' . esc_attr( $row->notes ) . '"></td>';
             echo '<td class="expman-align-left" style="white-space:nowrap;">';
             echo '<button type="submit" class="button" form="' . esc_attr( $form_id ) . '">שיוך</button> ';
             echo '<form method="post" style="display:inline;" onsubmit="return confirm(\'למחוק את השורה?\');">';
-            wp_nonce_field( 'expman_delete_servers_stage', 'expman_delete_servers_stage_nonce' );
+            echo '<input type="hidden" name="expman_delete_servers_stage_nonce" value="' . esc_attr( wp_create_nonce( 'expman_delete_servers_stage' ) ) . '">';
             echo '<input type="hidden" name="expman_action" value="delete_import_stage">';
             echo '<input type="hidden" name="tab" value="assign">';
             echo '<input type="hidden" name="stage_id" value="' . esc_attr( $row->id ) . '">';
