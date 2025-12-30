@@ -17,7 +17,7 @@ require_once plugin_dir_path(__FILE__) . 'includes/admin/class-expman-generic-it
 require_once plugin_dir_path(__FILE__) . 'includes/admin/class-expman-trash-page.php';
 require_once plugin_dir_path(__FILE__) . 'includes/admin/class-expman-logs-page.php';
 require_once plugin_dir_path(__FILE__) . 'includes/admin/class-expman-settings-page.php';
-require_once plugin_dir_path(__FILE__) . 'includes/admin/domains/class-drm-manager.php';
+require_once plugin_dir_path(__FILE__) . 'includes/admin/domains/class-expman-domains-manager.php';
 require_once plugin_dir_path(__FILE__) . 'includes/admin/class-expman-domains-page.php';
 
 class Expiry_Manager_Plugin {
@@ -29,6 +29,8 @@ class Expiry_Manager_Plugin {
 
     private static $instance = null;
 
+    private $domains_manager = null;
+
     public static function instance() {
         if ( self::$instance === null ) {
             self::$instance = new self();
@@ -38,12 +40,18 @@ class Expiry_Manager_Plugin {
 
     private function __construct() {
         register_activation_hook( __FILE__, array( $this, 'on_activate' ) );
+        register_deactivation_hook( __FILE__, array( $this, 'on_deactivate' ) );
         add_action( 'admin_menu', array( $this, 'register_admin_menu' ) );
         add_action( 'init', array( $this, 'register_shortcodes' ) );
         add_action( 'admin_init', array( $this, 'maybe_install_tables' ) );
         add_action( 'wp_ajax_expman_customer_search', array( $this, 'ajax_customer_search' ) );
         add_action( 'admin_post_expman_server_create', array( $this, 'handle_expman_server_create' ) );
         add_action( 'admin_footer', array( $this, 'render_required_fields_helper' ) );
+
+        // Ensure domains hooks (admin-post + admin-ajax) are registered on every request.
+        if ( class_exists( 'Expman_Domains_Manager' ) ) {
+            $this->domains_manager = new Expman_Domains_Manager();
+        }
 }
 
     public function render_required_fields_helper() {
@@ -148,6 +156,17 @@ class Expiry_Manager_Plugin {
                 'show_bulk_tab'      => 1,
             ) );
         }
+
+        // Domains WHOIS scan (01:00 + 13:00 daily)
+        if ( class_exists( 'Expman_Domains_Manager' ) ) {
+            Expman_Domains_Manager::activate_cron();
+        }
+    }
+
+    public function on_deactivate() {
+        if ( class_exists( 'Expman_Domains_Manager' ) ) {
+            Expman_Domains_Manager::deactivate_cron();
+        }
     }
 
     public function register_admin_menu() {
@@ -171,9 +190,8 @@ class Expiry_Manager_Plugin {
             function() { ( new Expman_Generic_Items_Page( self::OPTION_KEY, 'certs', 'תעודות אבטחה' ) )->render_page(); });
 
         add_submenu_page('expman_dashboard', 'דומיינים', 'דומיינים', 'read', 'expman_domains',
-            function() { ( new Expman_Generic_Items_Page( self::OPTION_KEY, 'domains', 'דומיינים' ) )->render_page(); });
-
-        add_submenu_page('expman_dashboard', 'שרתים', 'שרתים', 'read', 'expman_servers',
+            function() { ( new Expman_Domains_Page() )->render_page(); });
+add_submenu_page('expman_dashboard', 'שרתים', 'שרתים', 'read', 'expman_servers',
             function() { ( new Expman_Servers_Page( self::OPTION_KEY, self::VERSION ) )->render_page(); });
 
         add_submenu_page('expman_dashboard', 'Trash', 'Trash', 'read', 'expman_trash',
@@ -339,22 +357,63 @@ class Expiry_Manager_Plugin {
         $guard = $this->shortcode_guard();
         if ( $guard !== '' ) { return $guard; }
 
-        if ( ! class_exists( 'DRM_Manager' ) ) {
-            return '<div>DRM_Manager missing</div>';
+        if ( ! class_exists( 'Expman_Domains_Manager' ) ) {
+            return '<div>Expman_Domains_Manager missing</div>';
         }
 
-        $drm = new DRM_Manager();
+        $drm = new Expman_Domains_Manager();
         if ( method_exists( $drm, 'enqueue_front_assets' ) ) {
             $drm->enqueue_front_assets();
         }
 
+        $tab = isset( $_GET['expman_tab'] ) ? sanitize_key( $_GET['expman_tab'] ) : 'main';
+        if ( ! in_array( $tab, array( 'main', 'trash', 'settings', 'map' ), true ) ) {
+            $tab = 'main';
+        }
+
+        $tabs = array(
+            'main'     => 'טבלה ראשית',
+            'trash'    => 'סל מחזור',
+            'settings' => 'הגדרות',
+            'map'      => 'שיוך לקוח',
+        );
+
         $this->buffer_start();
+
         if ( class_exists( 'Expman_Nav' ) ) {
             Expman_Nav::render_public_nav( self::OPTION_KEY, self::VERSION );
         }
-        $drm->render_admin();
+
+        // Frontend tabs (so the old + new plugins can coexist without using wp-admin routes)
+        echo '<div class="expman-domains-frontend-tabs" style="direction:rtl;text-align:right;margin:12px 0 16px;">';
+        $base = remove_query_arg( array( 'expman_tab', 'orderby', 'order' ) );
+        foreach ( $tabs as $key => $label ) {
+            $url = add_query_arg( array( 'expman_tab' => $key ), $base );
+            $cls = 'button' . ( $tab === $key ? ' button-primary' : '' );
+            echo '<a class="' . esc_attr( $cls ) . '" style="margin-left:6px;" href="' . esc_url( $url ) . '">' . esc_html( $label ) . '</a>';
+        }
+        echo '</div>';
+
+        switch ( $tab ) {
+            case 'trash':
+                $drm->render_trash();
+                break;
+            case 'settings':
+                $drm->render_settings();
+                break;
+            case 'map':
+                $drm->render_map();
+                break;
+            case 'main':
+            default:
+                $drm->render_admin();
+                break;
+        }
+
         return $this->buffer_end();
     }
+
+
 
     public function shortcode_servers() {
         $guard = $this->shortcode_guard();
