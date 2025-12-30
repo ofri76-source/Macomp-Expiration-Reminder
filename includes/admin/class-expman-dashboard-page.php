@@ -74,6 +74,28 @@ class Expman_Dashboard_Page {
 
         echo '<div class="expman-dashboard-grid">';
 
+        if ( class_exists( 'Expman_Servers_Actions' ) && class_exists( 'Expman_Servers_Page' ) ) {
+            $servers_actions = new Expman_Servers_Actions( new Expman_Servers_Logger() );
+            $servers_actions->set_option_key( $this->option_key );
+            $servers_actions->set_dell( new Expman_Servers_Dell( new Expman_Servers_Logger(), $this->option_key, null ) );
+            $servers_summary = $servers_actions->get_summary_counts();
+            $servers_rows = $servers_actions->get_servers_rows( array(), 'days_to_end', 'ASC', false );
+            $servers_list = array();
+            foreach ( (array) $servers_rows as $row ) {
+                $days = isset( $row->days_to_end ) ? intval( $row->days_to_end ) : null;
+                $status = $this->status_for_days( $days, intval( $servers_summary['yellow_threshold'] ), intval( $servers_summary['red_threshold'] ) );
+                $servers_list[] = array(
+                    'title' => (string) ( $row->customer_name_snapshot ?? '' ),
+                    'secondary' => (string) ( $row->service_tag ?? '' ),
+                    'date' => (string) ( $row->ending_on ?? '' ),
+                    'days' => $days,
+                    'status' => $status,
+                );
+            }
+            $dashboard_data['servers'] = $servers_list;
+            $this->summary_cards_markup( 'שרתים', $servers_summary, 'servers' );
+        }
+
         if ( class_exists( 'Expman_Firewalls_Actions' ) ) {
             $fw_actions = new Expman_Firewalls_Actions();
             $fw_summary = $fw_actions->get_summary_counts( $this->option_key );
@@ -93,36 +115,6 @@ class Expman_Dashboard_Page {
             $dashboard_data['firewalls'] = $fw_list;
             $this->summary_cards_markup( 'חומות אש', $fw_summary, 'firewalls' );
         }
-
-        $servers_summary = array(
-            'green' => 0,
-            'yellow' => 0,
-            'red' => 0,
-            'total' => 0,
-            'yellow_threshold' => $yellow,
-            'red_threshold' => $red,
-        );
-        $servers_list = array();
-        if ( class_exists( 'Expman_Servers_Actions' ) && class_exists( 'Expman_Servers_Page' ) ) {
-            $servers_actions = new Expman_Servers_Actions( new Expman_Servers_Logger() );
-            $servers_actions->set_option_key( $this->option_key );
-            $servers_actions->set_dell( new Expman_Servers_Dell( new Expman_Servers_Logger(), $this->option_key, null ) );
-            $servers_summary = $servers_actions->get_summary_counts();
-            $servers_rows = $servers_actions->get_servers_rows( array(), 'days_to_end', 'ASC', false, 0, 0, 0 );
-            foreach ( (array) $servers_rows as $row ) {
-                $days = isset( $row->days_to_end ) ? intval( $row->days_to_end ) : null;
-                $status = $this->status_for_days( $days, intval( $servers_summary['yellow_threshold'] ), intval( $servers_summary['red_threshold'] ) );
-                $servers_list[] = array(
-                    'title' => (string) ( $row->customer_name_snapshot ?? '' ),
-                    'secondary' => (string) ( $row->service_tag ?? '' ),
-                    'date' => (string) ( $row->ending_on ?? '' ),
-                    'days' => $days,
-                    'status' => $status,
-                );
-            }
-        }
-        $dashboard_data['servers'] = $servers_list;
-        $this->summary_cards_markup( 'שרתים', $servers_summary, 'servers' );
 
         // Domains + Certs from exp_items
         global $wpdb;
