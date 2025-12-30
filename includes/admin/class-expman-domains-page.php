@@ -3,10 +3,10 @@ if ( ! defined( 'ABSPATH' ) ) { exit; }
 
 class Expman_Domains_Page {
 
-    private DRM_Manager $drm;
+    private Expman_Domains_Manager $drm;
 
     public function __construct() {
-        $this->drm = new DRM_Manager();
+        $this->drm = new Expman_Domains_Manager();
     }
 
     public function render_page() {
@@ -36,9 +36,6 @@ class Expman_Domains_Page {
 
         echo '<div style="margin-top:12px;">';
         switch ( $tab ) {
-            case 'bin':
-                $this->drm->render_bin();
-                break;
             case 'trash':
                 $this->drm->render_trash();
                 break;
