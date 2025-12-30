@@ -1051,7 +1051,7 @@ class Expman_Firewalls_UI {
             $per_page = $this->get_per_page();
             echo '<label style="display:inline-flex;align-items:center;gap:6px;margin-left:8px;">';
             echo '<span style="font-size:12px;color:#1f3b64;">הצג</span>';
-            echo '<select name="per_page" style="min-width:80px;">';
+            echo '<select name="per_page" style="min-width:80px;" onchange="this.form.submit()">';
             foreach ( array( 20, 50, 100, 200 ) as $opt ) {
                 echo '<option value="' . esc_attr( $opt ) . '" ' . selected( $per_page, $opt, false ) . '>' . esc_html( $opt ) . '</option>';
             }
@@ -1262,6 +1262,12 @@ class Expman_Firewalls_UI {
             });
             applyLocal();
           }';
+
+        // Client-side header sorting (prevents navigation/reload)
+        echo 'var table=wrap.querySelector("table");var tbody=table?table.querySelector("tbody"):null;';
+        echo 'function expmanParseVal(t){t=(t||"").trim();var m=t.match(/(\d{1,2})\/(\d{1,2})\/(\d{2,4})/);if(m){var d=("0"+m[1]).slice(-2);var mo=("0"+m[2]).slice(-2);var y=m[3];if(y.length===2){y="20"+y;}return y+mo+d;}var n=parseFloat(t.replace(/[^0-9\.\-]/g,""));if(!isNaN(n)&&/[0-9]/.test(t)){return n;}return t.toLowerCase();}';
+        echo 'function expmanSortTable(colIdx,asc){if(!tbody){return;}wrap.querySelectorAll("tr.expman-details").forEach(function(d){d.style.display="none";});var filterRow=tbody.querySelector("tr.expman-filter-row");var groups=[];var rows=Array.prototype.slice.call(wrap.querySelectorAll("tr.expman-row"));rows.forEach(function(r){var g=[r];var nx=r.nextElementSibling;while(nx && !nx.classList.contains("expman-row")){g.push(nx);nx=nx.nextElementSibling;}var cell=r.children[colIdx];var txt=cell?cell.textContent:"";groups.push({k:expmanParseVal(txt),t:txt,rows:g});});groups.sort(function(a,b){if(a.k<b.k){return asc?-1:1;}if(a.k>b.k){return asc?1:-1;}return 0;});var frag=document.createDocumentFragment();if(filterRow){frag.appendChild(filterRow);}groups.forEach(function(gr){gr.rows.forEach(function(tr){frag.appendChild(tr);});});tbody.appendChild(frag);}';
+        echo 'wrap.querySelectorAll("thead th a.expman-sort-link").forEach(function(a){a.addEventListener("click",function(ev){ev.preventDefault();var th=a.closest("th");if(!th){return;}var idx=Array.prototype.indexOf.call(th.parentNode.children,th);var asc=th.getAttribute("data-expman-sort")!=="ASC";Array.prototype.slice.call(th.parentNode.children).forEach(function(h){h.removeAttribute("data-expman-sort");});th.setAttribute("data-expman-sort",asc?"ASC":"DESC");expmanSortTable(idx,asc);});});';
         echo 'wrap.querySelectorAll("tr.expman-row").forEach(function(tr){tr.addEventListener("click",function(){';
         echo 'var id=tr.querySelector("a.expman-edit-btn")?tr.querySelector("a.expman-edit-btn").getAttribute("data-id"):null;';
         echo 'if(!id) return; var d=wrap.querySelector("tr.expman-details[data-for=\'"+id+"\']"); if(!d) return;';
@@ -1274,7 +1280,7 @@ class Expman_Firewalls_UI {
         $next_order = ( $orderby === $key && strtoupper( $order ) === 'ASC' ) ? 'DESC' : 'ASC';
         $url = add_query_arg( array( 'orderby' => $key, 'order' => $next_order ), $base );
         $class_attr = $class !== '' ? ' class="' . esc_attr( $class ) . '"' : '';
-        echo '<th' . $class_attr . '><a href="' . esc_url( $url ) . '" style="text-decoration:none;">' . esc_html( $label ) . '</a></th>';
+        echo '<th' . $class_attr . '><a href="' . esc_url( $url ) . '" class="expman-sort-link" data-expman-sort-key="' . esc_attr( $key ) . '" style="text-decoration:none;">' . esc_html( $label ) . '</a></th>';
     }
 
     private function render_form( $id = 0, $row_obj = null ) {
