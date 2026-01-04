@@ -292,6 +292,44 @@ class Expman_Servers_Actions {
         $this->add_notice( 'סל המחזור רוקן.' );
     }
 
+    public function action_archive_server() {
+        global $wpdb;
+        $servers_table = $wpdb->prefix . Expman_Servers_Page::TABLE_SERVERS;
+        $id = intval( $_POST['server_id'] ?? 0 );
+        if ( $id <= 0 ) {
+            return;
+        }
+        $wpdb->update(
+            $servers_table,
+            array(
+                'archived_at' => current_time( 'mysql' ),
+                'archived_by' => get_current_user_id(),
+            ),
+            array( 'id' => $id )
+        );
+        $this->logger->log_server_event( $id, 'archive', 'השרת הועבר לארכיון', array(), 'info' );
+        $this->add_notice( 'השרת הועבר לארכיון.' );
+    }
+
+    public function action_unarchive_server() {
+        global $wpdb;
+        $servers_table = $wpdb->prefix . Expman_Servers_Page::TABLE_SERVERS;
+        $id = intval( $_POST['server_id'] ?? 0 );
+        if ( $id <= 0 ) {
+            return;
+        }
+        $wpdb->update(
+            $servers_table,
+            array(
+                'archived_at' => null,
+                'archived_by' => null,
+            ),
+            array( 'id' => $id )
+        );
+        $this->logger->log_server_event( $id, 'unarchive', 'השרת הוחזר מהארכיון', array(), 'info' );
+        $this->add_notice( 'השרת הוחזר מהארכיון.' );
+    }
+
     private function get_thresholds() {
         $settings = $this->get_dell_settings();
         return array(
@@ -313,7 +351,7 @@ class Expman_Servers_Actions {
         return 'green';
     }
 
-    public function get_servers_rows( $filters = array(), $orderby = 'ending_on', $order = 'ASC', $include_deleted = false, $limit = 0, $offset = 0 ) {
+    public function get_servers_rows( $filters = array(), $orderby = 'ending_on', $order = 'ASC', $include_deleted = false, $limit = 0, $offset = 0, $archived_mode = 'exclude' ) {
         global $wpdb;
         $servers_table = $wpdb->prefix . Expman_Servers_Page::TABLE_SERVERS;
 
@@ -322,6 +360,12 @@ class Expman_Servers_Actions {
 
         if ( ! $include_deleted ) {
             $where[] = 'deleted_at IS NULL';
+        }
+
+        if ( $archived_mode === 'exclude' ) {
+            $where[] = 'archived_at IS NULL';
+        } elseif ( $archived_mode === 'only' ) {
+            $where[] = 'archived_at IS NOT NULL';
         }
 
         if ( ! empty( $filters['customer_number'] ) ) {
@@ -362,7 +406,7 @@ class Expman_Servers_Actions {
         return $wpdb->get_results( $sql );
     }
 
-    public function get_servers_total( $filters = array(), $include_deleted = false ) {
+    public function get_servers_total( $filters = array(), $include_deleted = false, $archived_mode = 'exclude' ) {
         global $wpdb;
         $servers_table = $wpdb->prefix . Expman_Servers_Page::TABLE_SERVERS;
 
@@ -371,6 +415,12 @@ class Expman_Servers_Actions {
 
         if ( ! $include_deleted ) {
             $where[] = 'deleted_at IS NULL';
+        }
+
+        if ( $archived_mode === 'exclude' ) {
+            $where[] = 'archived_at IS NULL';
+        } elseif ( $archived_mode === 'only' ) {
+            $where[] = 'archived_at IS NOT NULL';
         }
 
         if ( ! empty( $filters['customer_number'] ) ) {
@@ -404,7 +454,7 @@ class Expman_Servers_Actions {
                     SUM(CASE WHEN ending_on IS NOT NULL AND DATEDIFF(ending_on, CURDATE()) <= %d THEN 1 ELSE 0 END) AS red_count,
                     COUNT(*) AS total_count
                  FROM {$servers_table}
-                 WHERE option_key=%s AND deleted_at IS NULL",
+                 WHERE option_key=%s AND deleted_at IS NULL AND archived_at IS NULL",
                 $thresholds['yellow'],
                 $thresholds['red'] + 1,
                 $thresholds['yellow'],
@@ -415,6 +465,7 @@ class Expman_Servers_Actions {
         );
 
         $trash = $wpdb->get_var( $wpdb->prepare( "SELECT COUNT(*) FROM {$servers_table} WHERE option_key=%s AND deleted_at IS NOT NULL", $this->option_key ) );
+        $archive = $wpdb->get_var( $wpdb->prepare( "SELECT COUNT(*) FROM {$servers_table} WHERE option_key=%s AND archived_at IS NOT NULL AND deleted_at IS NULL", $this->option_key ) );
 
         return array(
             'green' => intval( $counts['green_count'] ?? 0 ),
@@ -422,6 +473,7 @@ class Expman_Servers_Actions {
             'red' => intval( $counts['red_count'] ?? 0 ),
             'total' => intval( $counts['total_count'] ?? 0 ),
             'trash' => intval( $trash ),
+            'archive' => intval( $archive ),
             'yellow_threshold' => $thresholds['yellow'],
             'red_threshold' => $thresholds['red'],
         );
