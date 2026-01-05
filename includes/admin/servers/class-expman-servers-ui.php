@@ -700,8 +700,11 @@ JS;
         if ( ! $hide_sync_buttons ) {
             echo '<button type="submit" class="expman-btn secondary" form="expman-servers-bulk-form">Sync מסומנים</button>';
         }
+        $page_slug = sanitize_text_field( $_GET['page'] ?? '' );
         echo '<form method="get" style="margin-right:auto;display:flex;align-items:center;gap:8px;">';
-        echo '<input type="hidden" name="page" value="' . esc_attr( sanitize_text_field( $_GET['page'] ?? '' ) ) . '">';
+        if ( $page_slug !== '' ) {
+            echo '<input type="hidden" name="page" value="' . esc_attr( $page_slug ) . '">';
+        }
         echo '<input type="hidden" name="tab" value="main">';
         echo '<label style="font-weight:600;">הצג</label>';
         echo '<select name="per_page" onchange="this.form.submit()">';
@@ -913,8 +916,11 @@ JS;
         $hide_sync_buttons = ( ! empty( $settings['hide_sync_buttons'] ) ) || ( (int) get_option( 'expman_dell_hide_sync_buttons', 0 ) === 1 );
 
         echo '<div class="expman-actionbar">';
+        $page_slug = sanitize_text_field( $_GET['page'] ?? '' );
         echo '<form method="get" style="margin-right:auto;display:flex;align-items:center;gap:8px;">';
-        echo '<input type="hidden" name="page" value="' . esc_attr( sanitize_text_field( $_GET['page'] ?? '' ) ) . '">';
+        if ( $page_slug !== '' ) {
+            echo '<input type="hidden" name="page" value="' . esc_attr( $page_slug ) . '">';
+        }
         echo '<input type="hidden" name="tab" value="archive">';
         echo '<label style="font-weight:600;">הצג</label>';
         echo '<select name="per_page" onchange="this.form.submit()">';
@@ -1317,7 +1323,7 @@ JS;
         echo '<input type="hidden" name="expman_save_dell_settings_nonce" value="' . esc_attr( wp_create_nonce( 'expman_save_dell_settings' ) ) . '">';
         echo '<input type="hidden" name="expman_action" value="save_dell_settings">';
         echo '<input type="hidden" name="tab" value="settings">';
-        echo '<table class="widefat expman-sortable" id="expman-os-table" style="display:none;"><thead><tr><th>מערכת הפעלה</th><th style="width:90px;">פעולה</th></tr></thead><tbody>';
+        echo '<table class="widefat expman-sortable" id="expman-os-table"><thead><tr><th>מערכת הפעלה</th><th style="width:90px;">פעולה</th></tr></thead><tbody>';
         foreach ( $os_list as $os ) {
             echo '<tr>';
             echo '<td><input type="text" name="dell_os_list[]" value="' . esc_attr( (string) $os ) . '" class="regular-text" style="width:100%;"></td>';
@@ -1325,8 +1331,8 @@ JS;
             echo '</tr>';
         }
         echo '</tbody></table>';
-        echo '<button type="button" class="button" id="expman-add-os" style="margin-top:8px;display:none;">הוסף מערכת הפעלה</button>';
-        echo '<button type="submit" class="button button-primary" style="margin-top:8px;display:none;" id="expman-save-os">שמירה</button>';
+        echo '<button type="button" class="button" id="expman-add-os" style="margin-top:8px;">הוסף מערכת הפעלה</button>';
+        echo '<button type="submit" class="button button-primary" style="margin-top:8px;" id="expman-save-os">שמירה</button>';
         echo '<script>
         (function(){
             var addBtn = document.getElementById("expman-add-os");
