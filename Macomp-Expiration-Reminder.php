@@ -46,6 +46,8 @@ class Expiry_Manager_Plugin {
         add_action( 'admin_init', array( $this, 'maybe_install_tables' ) );
         add_action( 'wp_ajax_expman_customer_search', array( $this, 'ajax_customer_search' ) );
         add_action( 'admin_post_expman_server_create', array( $this, 'handle_expman_server_create' ) );
+        add_action( 'admin_post_expman_export_servers_csv', array( $this, 'handle_expman_export_servers_csv' ) );
+        add_action( 'admin_post_nopriv_expman_export_servers_csv', array( $this, 'handle_expman_export_servers_csv' ) );
         add_action( 'admin_footer', array( $this, 'render_required_fields_helper' ) );
 
         // Ensure domains hooks (admin-post + admin-ajax) are registered on every request.
@@ -299,6 +301,22 @@ add_submenu_page('expman_dashboard', 'שרתים', 'שרתים', 'read', 'expman
         }
 
         wp_send_json( array( 'items' => $items ) );
+    }
+
+    public function handle_expman_export_servers_csv() {
+        if ( ! current_user_can( 'read' ) ) {
+            wp_die( esc_html__( 'Unauthorized', 'expiry-manager' ), 403 );
+        }
+
+        check_admin_referer( 'expman_export_servers_csv', 'expman_export_servers_csv_nonce' );
+
+        if ( ! class_exists( 'Expman_Servers_Page' ) ) {
+            wp_die( esc_html__( 'Servers module not available.', 'expiry-manager' ) );
+        }
+
+        $page = new Expman_Servers_Page( self::OPTION_KEY, self::VERSION );
+        $page->get_actions()->action_export_csv();
+        exit;
     }
 
 /* ---------- SHORTCODES (Public Pages) ---------- */

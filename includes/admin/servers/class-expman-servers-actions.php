@@ -97,6 +97,7 @@ class Expman_Servers_Actions {
         $operating_system      = sanitize_text_field( wp_unslash( $_POST['operating_system'] ?? '' ) );
         $service_level         = sanitize_text_field( wp_unslash( $_POST['service_level'] ?? '' ) );
         $server_model          = sanitize_text_field( wp_unslash( $_POST['server_model'] ?? '' ) );
+        $nickname              = sanitize_text_field( wp_unslash( $_POST['nickname'] ?? '' ) );
 
         $notes        = wp_kses_post( wp_unslash( $_POST['notes'] ?? '' ) );
         $temp_enabled = isset( $_POST['temp_notice_enabled'] ) ? 1 : 0;
@@ -152,6 +153,7 @@ class Expman_Servers_Actions {
             'operating_system'         => $operating_system !== '' ? $operating_system : null,
             'service_level'            => $service_level !== '' ? $service_level : null,
             'server_model'             => $server_model !== '' ? $server_model : null,
+            'nickname'                 => $nickname !== '' ? $nickname : null,
             'notes'                    => $notes,
             'temp_notice_enabled'      => $temp_enabled,
             'temp_notice_text'         => $temp_notice,
@@ -187,6 +189,7 @@ class Expman_Servers_Actions {
                     array( 'label' => 'מערכת הפעלה', 'from' => $prev['operating_system'] ?? '', 'to' => $operating_system ),
                     array( 'label' => 'סוג שירות', 'from' => $prev['service_level'] ?? '', 'to' => $service_level ),
                     array( 'label' => 'דגם שרת', 'from' => $prev['server_model'] ?? '', 'to' => $server_model ),
+                    array( 'label' => 'כינוי', 'from' => $prev['nickname'] ?? '', 'to' => $nickname ),
                     array( 'label' => 'הערות', 'from' => $prev['notes'] ?? '', 'to' => $notes ),
                     array( 'label' => 'הודעה זמנית', 'from' => (string) ( $prev['temp_notice_enabled'] ?? 0 ), 'to' => (string) $temp_enabled ),
                     array( 'label' => 'טקסט הודעה זמנית', 'from' => $prev['temp_notice_text'] ?? '', 'to' => $temp_notice ),
@@ -292,6 +295,44 @@ class Expman_Servers_Actions {
         $this->add_notice( 'סל המחזור רוקן.' );
     }
 
+    public function action_archive_server() {
+        global $wpdb;
+        $servers_table = $wpdb->prefix . Expman_Servers_Page::TABLE_SERVERS;
+        $id = intval( $_POST['server_id'] ?? 0 );
+        if ( $id <= 0 ) {
+            return;
+        }
+        $wpdb->update(
+            $servers_table,
+            array(
+                'archived_at' => current_time( 'mysql' ),
+                'archived_by' => get_current_user_id(),
+            ),
+            array( 'id' => $id )
+        );
+        $this->logger->log_server_event( $id, 'archive', 'השרת הועבר לארכיון', array(), 'info' );
+        $this->add_notice( 'השרת הועבר לארכיון.' );
+    }
+
+    public function action_unarchive_server() {
+        global $wpdb;
+        $servers_table = $wpdb->prefix . Expman_Servers_Page::TABLE_SERVERS;
+        $id = intval( $_POST['server_id'] ?? 0 );
+        if ( $id <= 0 ) {
+            return;
+        }
+        $wpdb->update(
+            $servers_table,
+            array(
+                'archived_at' => null,
+                'archived_by' => null,
+            ),
+            array( 'id' => $id )
+        );
+        $this->logger->log_server_event( $id, 'unarchive', 'השרת הוחזר מהארכיון', array(), 'info' );
+        $this->add_notice( 'השרת הוחזר מהארכיון.' );
+    }
+
     private function get_thresholds() {
         $settings = $this->get_dell_settings();
         return array(
@@ -313,7 +354,7 @@ class Expman_Servers_Actions {
         return 'green';
     }
 
-    public function get_servers_rows( $filters = array(), $orderby = 'ending_on', $order = 'ASC', $include_deleted = false, $limit = 0, $offset = 0 ) {
+    public function get_servers_rows( $filters = array(), $orderby = 'ending_on', $order = 'ASC', $include_deleted = false, $limit = 0, $offset = 0, $archived_mode = 'exclude' ) {
         global $wpdb;
         $servers_table = $wpdb->prefix . Expman_Servers_Page::TABLE_SERVERS;
 
@@ -322,6 +363,12 @@ class Expman_Servers_Actions {
 
         if ( ! $include_deleted ) {
             $where[] = 'deleted_at IS NULL';
+        }
+
+        if ( $archived_mode === 'exclude' ) {
+            $where[] = 'archived_at IS NULL';
+        } elseif ( $archived_mode === 'only' ) {
+            $where[] = 'archived_at IS NOT NULL';
         }
 
         if ( ! empty( $filters['customer_number'] ) ) {
@@ -362,7 +409,7 @@ class Expman_Servers_Actions {
         return $wpdb->get_results( $sql );
     }
 
-    public function get_servers_total( $filters = array(), $include_deleted = false ) {
+    public function get_servers_total( $filters = array(), $include_deleted = false, $archived_mode = 'exclude' ) {
         global $wpdb;
         $servers_table = $wpdb->prefix . Expman_Servers_Page::TABLE_SERVERS;
 
@@ -371,6 +418,12 @@ class Expman_Servers_Actions {
 
         if ( ! $include_deleted ) {
             $where[] = 'deleted_at IS NULL';
+        }
+
+        if ( $archived_mode === 'exclude' ) {
+            $where[] = 'archived_at IS NULL';
+        } elseif ( $archived_mode === 'only' ) {
+            $where[] = 'archived_at IS NOT NULL';
         }
 
         if ( ! empty( $filters['customer_number'] ) ) {
@@ -404,7 +457,7 @@ class Expman_Servers_Actions {
                     SUM(CASE WHEN ending_on IS NOT NULL AND DATEDIFF(ending_on, CURDATE()) <= %d THEN 1 ELSE 0 END) AS red_count,
                     COUNT(*) AS total_count
                  FROM {$servers_table}
-                 WHERE option_key=%s AND deleted_at IS NULL",
+                 WHERE option_key=%s AND deleted_at IS NULL AND archived_at IS NULL",
                 $thresholds['yellow'],
                 $thresholds['red'] + 1,
                 $thresholds['yellow'],
@@ -415,6 +468,7 @@ class Expman_Servers_Actions {
         );
 
         $trash = $wpdb->get_var( $wpdb->prepare( "SELECT COUNT(*) FROM {$servers_table} WHERE option_key=%s AND deleted_at IS NOT NULL", $this->option_key ) );
+        $archive = $wpdb->get_var( $wpdb->prepare( "SELECT COUNT(*) FROM {$servers_table} WHERE option_key=%s AND archived_at IS NOT NULL AND deleted_at IS NULL", $this->option_key ) );
 
         return array(
             'green' => intval( $counts['green_count'] ?? 0 ),
@@ -422,6 +476,7 @@ class Expman_Servers_Actions {
             'red' => intval( $counts['red_count'] ?? 0 ),
             'total' => intval( $counts['total_count'] ?? 0 ),
             'trash' => intval( $trash ),
+            'archive' => intval( $archive ),
             'yellow_threshold' => $thresholds['yellow'],
             'red_threshold' => $thresholds['red'],
         );
@@ -753,7 +808,7 @@ class Expman_Servers_Actions {
 
         $rows = $wpdb->get_results(
             $wpdb->prepare(
-                "SELECT * FROM {$servers_table} WHERE option_key=%s AND deleted_at IS NULL ORDER BY id DESC",
+                "SELECT * FROM {$servers_table} WHERE option_key=%s ORDER BY id DESC",
                 $this->option_key
             ),
             ARRAY_A
@@ -764,6 +819,7 @@ class Expman_Servers_Actions {
         }
 
         $filename = 'expman_servers_' . gmdate( 'Ymd_His' ) . '.csv';
+        nocache_headers();
         header( 'Content-Type: text/csv; charset=UTF-8' );
         header( 'Content-Disposition: attachment; filename=' . $filename );
         header( 'Pragma: no-cache' );
@@ -786,11 +842,14 @@ class Expman_Servers_Actions {
                 'מערכת הפעלה',
                 'סוג שירות',
                 'דגם שרת',
+                'כינוי',
                 'הודעה זמנית פעילה',
                 'טקסט הודעה זמנית',
                 'הערות',
                 'Raw JSON',
                 'Last Sync',
+                'Archived At',
+                'Archived By',
                 'Deleted At',
                 'Deleted By',
                 'Created At',
@@ -812,11 +871,14 @@ class Expman_Servers_Actions {
                     $row['operating_system'] ?? '',
                     $row['service_level'] ?? '',
                     $row['server_model'] ?? '',
+                    $row['nickname'] ?? '',
                     ! empty( $row['temp_notice_enabled'] ) ? 'כן' : 'לא',
                     $row['temp_notice_text'] ?? '',
                     $row['notes'] ?? '',
                     $row['raw_json'] ?? '',
                     $row['last_sync_at'] ?? '',
+                    $row['archived_at'] ?? '',
+                    $row['archived_by'] ?? '',
                     $row['deleted_at'] ?? '',
                     $row['deleted_by'] ?? '',
                     $row['created_at'] ?? '',
