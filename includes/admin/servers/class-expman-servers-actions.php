@@ -805,7 +805,7 @@ class Expman_Servers_Actions {
 
         $rows = $wpdb->get_results(
             $wpdb->prepare(
-                "SELECT * FROM {$servers_table} WHERE option_key=%s AND deleted_at IS NULL ORDER BY id DESC",
+                "SELECT * FROM {$servers_table} WHERE option_key=%s ORDER BY id DESC",
                 $this->option_key
             ),
             ARRAY_A
@@ -816,6 +816,7 @@ class Expman_Servers_Actions {
         }
 
         $filename = 'expman_servers_' . gmdate( 'Ymd_His' ) . '.csv';
+        nocache_headers();
         header( 'Content-Type: text/csv; charset=UTF-8' );
         header( 'Content-Disposition: attachment; filename=' . $filename );
         header( 'Pragma: no-cache' );
@@ -843,6 +844,8 @@ class Expman_Servers_Actions {
                 'הערות',
                 'Raw JSON',
                 'Last Sync',
+                'Archived At',
+                'Archived By',
                 'Deleted At',
                 'Deleted By',
                 'Created At',
@@ -869,6 +872,8 @@ class Expman_Servers_Actions {
                     $row['notes'] ?? '',
                     $row['raw_json'] ?? '',
                     $row['last_sync_at'] ?? '',
+                    $row['archived_at'] ?? '',
+                    $row['archived_by'] ?? '',
                     $row['deleted_at'] ?? '',
                     $row['deleted_by'] ?? '',
                     $row['created_at'] ?? '',

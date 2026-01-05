@@ -1368,10 +1368,9 @@ JS;
         echo '<hr style="margin:24px 0;">';
         echo '<h3>ייבוא / ייצוא לאקסל (CSV)</h3>';
         echo '<p style="color:#666;">הקובץ מיוצא בקידוד UTF-8 עם BOM כדי לתמוך בעברית. הייצוא משמש גם כתבנית לייבוא ישיר לטבלה הראשית.</p>';
-        echo '<form method="post" style="margin-bottom:12px;">';
+        echo '<form method="post" action="' . esc_url( admin_url( 'admin-post.php' ) ) . '" style="margin-bottom:12px;">';
         wp_nonce_field( 'expman_export_servers_csv', 'expman_export_servers_csv_nonce' );
-        echo '<input type="hidden" name="expman_action" value="export_servers_csv">';
-        echo '<input type="hidden" name="tab" value="settings">';
+        echo '<input type="hidden" name="action" value="expman_export_servers_csv">';
         echo '<button type="submit" class="button">ייצוא מלא (תבנית לייבוא ישיר)</button>';
         echo '</form>';
 
