@@ -37,6 +37,8 @@ class Expman_Servers_Schema {
             notes TEXT NULL,
             raw_json LONGTEXT NULL,
             last_sync_at DATETIME NULL,
+            archived_at DATETIME NULL,
+            archived_by BIGINT(20) NULL,
             deleted_at DATETIME NULL,
             deleted_by BIGINT(20) NULL,
             created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -45,6 +47,7 @@ class Expman_Servers_Schema {
             UNIQUE KEY service_tag (service_tag),
             KEY option_key (option_key),
             KEY customer_id (customer_id),
+            KEY archived_at (archived_at),
             KEY deleted_at (deleted_at),
             KEY ending_on (ending_on)
         ) {$charset_collate};";
