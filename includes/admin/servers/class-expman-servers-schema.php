@@ -32,6 +32,7 @@ class Expman_Servers_Schema {
             operating_system VARCHAR(255) NULL,
             service_level VARCHAR(255) NULL,
             server_model VARCHAR(255) NULL,
+            nickname VARCHAR(255) NULL,
             temp_notice_enabled TINYINT(1) NOT NULL DEFAULT 0,
             temp_notice_text TEXT NULL,
             notes TEXT NULL,

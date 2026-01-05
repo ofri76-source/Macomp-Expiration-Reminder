@@ -97,6 +97,7 @@ class Expman_Servers_Actions {
         $operating_system      = sanitize_text_field( wp_unslash( $_POST['operating_system'] ?? '' ) );
         $service_level         = sanitize_text_field( wp_unslash( $_POST['service_level'] ?? '' ) );
         $server_model          = sanitize_text_field( wp_unslash( $_POST['server_model'] ?? '' ) );
+        $nickname              = sanitize_text_field( wp_unslash( $_POST['nickname'] ?? '' ) );
 
         $notes        = wp_kses_post( wp_unslash( $_POST['notes'] ?? '' ) );
         $temp_enabled = isset( $_POST['temp_notice_enabled'] ) ? 1 : 0;
@@ -152,6 +153,7 @@ class Expman_Servers_Actions {
             'operating_system'         => $operating_system !== '' ? $operating_system : null,
             'service_level'            => $service_level !== '' ? $service_level : null,
             'server_model'             => $server_model !== '' ? $server_model : null,
+            'nickname'                 => $nickname !== '' ? $nickname : null,
             'notes'                    => $notes,
             'temp_notice_enabled'      => $temp_enabled,
             'temp_notice_text'         => $temp_notice,
@@ -187,6 +189,7 @@ class Expman_Servers_Actions {
                     array( 'label' => 'מערכת הפעלה', 'from' => $prev['operating_system'] ?? '', 'to' => $operating_system ),
                     array( 'label' => 'סוג שירות', 'from' => $prev['service_level'] ?? '', 'to' => $service_level ),
                     array( 'label' => 'דגם שרת', 'from' => $prev['server_model'] ?? '', 'to' => $server_model ),
+                    array( 'label' => 'כינוי', 'from' => $prev['nickname'] ?? '', 'to' => $nickname ),
                     array( 'label' => 'הערות', 'from' => $prev['notes'] ?? '', 'to' => $notes ),
                     array( 'label' => 'הודעה זמנית', 'from' => (string) ( $prev['temp_notice_enabled'] ?? 0 ), 'to' => (string) $temp_enabled ),
                     array( 'label' => 'טקסט הודעה זמנית', 'from' => $prev['temp_notice_text'] ?? '', 'to' => $temp_notice ),
@@ -839,6 +842,7 @@ class Expman_Servers_Actions {
                 'מערכת הפעלה',
                 'סוג שירות',
                 'דגם שרת',
+                'כינוי',
                 'הודעה זמנית פעילה',
                 'טקסט הודעה זמנית',
                 'הערות',
@@ -867,6 +871,7 @@ class Expman_Servers_Actions {
                     $row['operating_system'] ?? '',
                     $row['service_level'] ?? '',
                     $row['server_model'] ?? '',
+                    $row['nickname'] ?? '',
                     ! empty( $row['temp_notice_enabled'] ) ? 'כן' : 'לא',
                     $row['temp_notice_text'] ?? '',
                     $row['notes'] ?? '',

@@ -78,7 +78,7 @@ class Expman_Servers_UI {
         echo '<div class="expman-summary-card red" data-expman-status="red" data-active="0"><button type="button"><h4>דורש טיפול מייד</h4><div class="count">' . esc_html( intval( $data['red'] ?? 0 ) ) . '</div></button></div>';
         echo '</div>';
 
-        echo '<div class="expman-summary-meta" data-expman-status="all"><button type="button">סה״כ רשומות פעילות: ' . esc_html( intval( $data['total'] ?? 0 ) ) . ' | בארכיון: ' . esc_html( intval( $data['archive'] ?? 0 ) ) . ' | ב־Trash: ' . esc_html( intval( $data['trash'] ?? 0 ) ) . '</button></div>';
+        echo '<div class="expman-summary-meta" data-expman-status="all"><button type="button">סה״כ רשומות פעילות: ' . esc_html( intval( $data['total'] ?? 0 ) ) . ' | בארכיון: ' . esc_html( intval( $data['archive'] ?? 0 ) ) . ' | בסל מיחזור: ' . esc_html( intval( $data['trash'] ?? 0 ) ) . '</button></div>';
     }
 
     public function render() {
@@ -701,9 +701,13 @@ JS;
             echo '<button type="submit" class="expman-btn secondary" form="expman-servers-bulk-form">Sync מסומנים</button>';
         }
         $page_slug = sanitize_text_field( $_GET['page'] ?? '' );
+        $page_id = sanitize_text_field( $_GET['page_id'] ?? '' );
         echo '<form method="get" style="margin-right:auto;display:flex;align-items:center;gap:8px;">';
         if ( $page_slug !== '' ) {
             echo '<input type="hidden" name="page" value="' . esc_attr( $page_slug ) . '">';
+        }
+        if ( $page_id !== '' ) {
+            echo '<input type="hidden" name="page_id" value="' . esc_attr( $page_id ) . '">';
         }
         echo '<input type="hidden" name="tab" value="main">';
         echo '<label style="font-weight:600;">הצג</label>';
@@ -742,7 +746,8 @@ JS;
         echo '<th class="expman-col-customer-name">שם לקוח</th>';
         echo '<th class="expman-col-service-tag">Service Tag</th>';
         echo '<th class="expman-col-os">מערכת הפעלה</th>';
-        echo '<th class="expman-col-date">Ending On</th>';
+        echo '<th class="expman-col-date">סיום אחריות</th>';
+        echo '<th class="expman-col-date">כינוי</th>';
         echo '<th class="expman-col-days">ימים</th>';
         echo '</tr>';
 
@@ -753,13 +758,14 @@ JS;
         echo '<th><input type="text" class="expman-filter-input" data-filter="service-tag" placeholder="סינון"></th>';
         echo '<th><input type="text" class="expman-filter-input" data-filter="operating-system" placeholder="סינון"></th>';
         echo '<th><input type="text" class="expman-filter-input" data-filter="ending-on" placeholder="סינון"></th>';
+        echo '<th><input type="text" class="expman-filter-input" data-filter="nickname" placeholder="סינון"></th>';
         echo '<th></th>';
         echo '</tr>';
 
         echo '</thead><tbody>';
 
         if ( empty( $rows ) ) {
-            echo '<tr><td colspan="7" style="text-align:center;">אין נתונים להצגה.</td></tr>';
+            echo '<tr><td colspan="8" style="text-align:center;">אין נתונים להצגה.</td></tr>';
         }
 
         $row_index = 0;
@@ -811,6 +817,7 @@ JS;
             echo ' data-service-tag="' . esc_attr( mb_strtolower( (string) $row->service_tag ) ) . '"';
             echo ' data-operating-system="' . esc_attr( mb_strtolower( (string) $row->operating_system ) ) . '"';
             echo ' data-ending-on="' . esc_attr( mb_strtolower( (string) $row->ending_on ) ) . '"';
+            echo ' data-nickname="' . esc_attr( mb_strtolower( (string) $row->nickname ) ) . '"';
             echo '>';
             echo '<td><input type="checkbox" class="expman-bulk-id" form="expman-servers-bulk-form" name="server_ids[]" value="' . esc_attr( $row->id ) . '"></td>';
             echo '<td>' . esc_html( $row->customer_number_snapshot ) . '</td>';
@@ -818,11 +825,12 @@ JS;
             echo '<td>' . esc_html( $row->service_tag ) . '</td>';
             echo '<td>' . esc_html( $row->operating_system ) . '</td>';
             echo '<td>' . esc_html( self::fmt_date_short( $row->ending_on ) ) . '</td>';
-                        echo '<td><span class="expman-days-pill ' . esc_attr( $days_class ) . '">' . esc_html( $days_label ) . '</span></td>';
+            echo '<td>' . esc_html( $row->nickname ) . '</td>';
+            echo '<td><span class="expman-days-pill ' . esc_attr( $days_class ) . '">' . esc_html( $days_label ) . '</span></td>';
             echo '</tr>';
 
             echo '<tr class="expman-row-actions" data-for="' . esc_attr( $row->id ) . '" style="display:none;">';
-            echo '<td colspan="7">';
+            echo '<td colspan="8">';
             echo '<div style="display:flex;gap:10px;align-items:center;justify-content:flex-start;flex-wrap:wrap;">';
             echo '<span><strong>Last Sync:</strong> ' . esc_html( self::fmt_datetime_short( $row->last_sync_at ) ) . '</span>';
             echo '<div style="display:flex;gap:8px;align-items:center;">';
@@ -843,7 +851,7 @@ JS;
             echo '</tr>';
 
             echo '<tr class="expman-details" data-for="' . esc_attr( $row->id ) . '" style="display:none;">';
-            echo '<td colspan="7">';
+            echo '<td colspan="8">';
             echo '<div style="display:grid;grid-template-columns:repeat(3,minmax(160px,1fr));gap:12px;">';
             echo '<div><strong>Express Service Code:</strong> ' . esc_html( $row->express_service_code ) . '</div>';
             echo '<div><strong>Ship Date:</strong> ' . esc_html( self::fmt_date_short( $row->ship_date ) ) . '</div>';
@@ -866,7 +874,7 @@ JS;
             echo '</tr>';
 
             echo '<tr class="expman-inline-form" data-for="' . esc_attr( $row->id ) . '" style="display:none;">';
-            echo '<td colspan="7">';
+            echo '<td colspan="8">';
             $this->render_form( intval( $row->id ), $row, false, false, 'main' );
             echo '</td>';
             echo '</tr>';
@@ -917,9 +925,13 @@ JS;
 
         echo '<div class="expman-actionbar">';
         $page_slug = sanitize_text_field( $_GET['page'] ?? '' );
+        $page_id = sanitize_text_field( $_GET['page_id'] ?? '' );
         echo '<form method="get" style="margin-right:auto;display:flex;align-items:center;gap:8px;">';
         if ( $page_slug !== '' ) {
             echo '<input type="hidden" name="page" value="' . esc_attr( $page_slug ) . '">';
+        }
+        if ( $page_id !== '' ) {
+            echo '<input type="hidden" name="page_id" value="' . esc_attr( $page_id ) . '">';
         }
         echo '<input type="hidden" name="tab" value="archive">';
         echo '<label style="font-weight:600;">הצג</label>';
@@ -942,7 +954,8 @@ JS;
         echo '<th class="expman-col-customer-name">שם לקוח</th>';
         echo '<th class="expman-col-service-tag">Service Tag</th>';
         echo '<th class="expman-col-os">מערכת הפעלה</th>';
-        echo '<th class="expman-col-date">Ending On</th>';
+        echo '<th class="expman-col-date">סיום אחריות</th>';
+        echo '<th class="expman-col-date">כינוי</th>';
         echo '<th class="expman-col-days">ימים</th>';
         echo '</tr>';
 
@@ -953,13 +966,14 @@ JS;
         echo '<th><input type="text" class="expman-filter-input" data-filter="service-tag" placeholder="סינון"></th>';
         echo '<th><input type="text" class="expman-filter-input" data-filter="operating-system" placeholder="סינון"></th>';
         echo '<th><input type="text" class="expman-filter-input" data-filter="ending-on" placeholder="סינון"></th>';
+        echo '<th><input type="text" class="expman-filter-input" data-filter="nickname" placeholder="סינון"></th>';
         echo '<th></th>';
         echo '</tr>';
 
         echo '</thead><tbody>';
 
         if ( empty( $rows ) ) {
-            echo '<tr><td colspan="7" style="text-align:center;">אין נתונים להצגה.</td></tr>';
+            echo '<tr><td colspan="8" style="text-align:center;">אין נתונים להצגה.</td></tr>';
         }
 
         $row_index = 0;
@@ -1011,6 +1025,7 @@ JS;
             echo ' data-service-tag="' . esc_attr( mb_strtolower( (string) $row->service_tag ) ) . '"';
             echo ' data-operating-system="' . esc_attr( mb_strtolower( (string) $row->operating_system ) ) . '"';
             echo ' data-ending-on="' . esc_attr( mb_strtolower( (string) $row->ending_on ) ) . '"';
+            echo ' data-nickname="' . esc_attr( mb_strtolower( (string) $row->nickname ) ) . '"';
             echo '>';
             echo '<td></td>';
             echo '<td>' . esc_html( $row->customer_number_snapshot ) . '</td>';
@@ -1018,11 +1033,12 @@ JS;
             echo '<td>' . esc_html( $row->service_tag ) . '</td>';
             echo '<td>' . esc_html( $row->operating_system ) . '</td>';
             echo '<td>' . esc_html( self::fmt_date_short( $row->ending_on ) ) . '</td>';
+            echo '<td>' . esc_html( $row->nickname ) . '</td>';
             echo '<td><span class="expman-days-pill ' . esc_attr( $days_class ) . '">' . esc_html( $days_label ) . '</span></td>';
             echo '</tr>';
 
             echo '<tr class="expman-row-actions" data-for="' . esc_attr( $row->id ) . '" style="display:none;">';
-            echo '<td colspan="7">';
+            echo '<td colspan="8">';
             echo '<div style="display:flex;gap:10px;align-items:center;justify-content:flex-start;flex-wrap:wrap;">';
             echo '<span><strong>Last Sync:</strong> ' . esc_html( self::fmt_datetime_short( $row->last_sync_at ) ) . '</span>';
             echo '<div style="display:flex;gap:8px;align-items:center;">';
@@ -1043,7 +1059,7 @@ JS;
             echo '</tr>';
 
             echo '<tr class="expman-details" data-for="' . esc_attr( $row->id ) . '" style="display:none;">';
-            echo '<td colspan="7">';
+            echo '<td colspan="8">';
             echo '<div style="display:grid;grid-template-columns:repeat(3,minmax(160px,1fr));gap:12px;">';
             echo '<div><strong>Express Service Code:</strong> ' . esc_html( $row->express_service_code ) . '</div>';
             echo '<div><strong>Ship Date:</strong> ' . esc_html( self::fmt_date_short( $row->ship_date ) ) . '</div>';
@@ -1066,7 +1082,7 @@ JS;
             echo '</tr>';
 
             echo '<tr class="expman-inline-form" data-for="' . esc_attr( $row->id ) . '" style="display:none;">';
-            echo '<td colspan="7">';
+            echo '<td colspan="8">';
             $this->render_form( intval( $row->id ), $row, false, false, 'archive' );
             echo '</td>';
             echo '</tr>';
@@ -1104,6 +1120,7 @@ JS;
             'operating_system' => '',
             'service_level' => '',
             'server_model' => '',
+            'nickname' => '',
             'notes' => '',
             'temp_notice_enabled' => 0,
             'temp_notice_text' => '',
@@ -1120,6 +1137,7 @@ JS;
             $row['operating_system'] = (string) ( $row_obj->operating_system ?? '' );
             $row['service_level'] = (string) ( $row_obj->service_level ?? '' );
             $row['server_model'] = (string) ( $row_obj->server_model ?? '' );
+            $row['nickname'] = (string) ( $row_obj->nickname ?? '' );
             $row['notes'] = (string) ( $row_obj->notes ?? '' );
             $row['temp_notice_enabled'] = intval( $row_obj->temp_notice_enabled ?? 0 );
             $row['temp_notice_text'] = (string) ( $row_obj->temp_notice_text ?? '' );
@@ -1159,7 +1177,7 @@ JS;
         $ship_ui  = self::fmt_date_short( $row['ship_date'] );
         $end_ui   = self::fmt_date_short( $row['ending_on'] );
         echo '<div><label>Ship Date</label><input type="text" class="expman-date-input" name="ship_date" value="' . esc_attr( $ship_ui ) . '" placeholder="dd/mm/yyyy" inputmode="numeric" pattern="\\d{2}([\\/\\-.]?\\d{2})([\\/\\-.]?\\d{2,4})"></div>';
-        echo '<div><label>Ending On</label><input type="text" class="expman-date-input" name="ending_on" value="' . esc_attr( $end_ui ) . '" placeholder="dd/mm/yyyy" inputmode="numeric" pattern="\\d{2}([\\/\\-.]?\\d{2})([\\/\\-.]?\\d{2,4})"></div>';
+        echo '<div><label>סיום אחריות</label><input type="text" class="expman-date-input" name="ending_on" value="' . esc_attr( $end_ui ) . '" placeholder="dd/mm/yyyy" inputmode="numeric" pattern="\\d{2}([\\/\\-.]?\\d{2})([\\/\\-.]?\\d{2,4})"></div>';
 
         $os_options = $this->page->get_dell_settings()['operating_systems'] ?? array();
         if ( empty( $os_options ) || ! is_array( $os_options ) ) {
@@ -1192,6 +1210,7 @@ JS;
         }
         echo '</select></div>';
         echo '<div><label>דגם שרת</label><input type="text" name="server_model" value="' . esc_attr( $row['server_model'] ) . '"></div>';
+        echo '<div><label>כינוי</label><input type="text" name="nickname" value="' . esc_attr( $row['nickname'] ?? '' ) . '"></div>';
         echo '<div><label>סנכרון אחרי שמירה</label><label style="font-weight:600;"><input type="checkbox" name="sync_now" value="1"> כן</label></div>';
 
         echo '<div class="full"><label>הערות</label><textarea name="notes" rows="2">' . esc_textarea( $row['notes'] ) . '</textarea></div>';

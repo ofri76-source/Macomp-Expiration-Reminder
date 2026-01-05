@@ -47,6 +47,7 @@ class Expiry_Manager_Plugin {
         add_action( 'wp_ajax_expman_customer_search', array( $this, 'ajax_customer_search' ) );
         add_action( 'admin_post_expman_server_create', array( $this, 'handle_expman_server_create' ) );
         add_action( 'admin_post_expman_export_servers_csv', array( $this, 'handle_expman_export_servers_csv' ) );
+        add_action( 'admin_post_nopriv_expman_export_servers_csv', array( $this, 'handle_expman_export_servers_csv' ) );
         add_action( 'admin_footer', array( $this, 'render_required_fields_helper' ) );
 
         // Ensure domains hooks (admin-post + admin-ajax) are registered on every request.
