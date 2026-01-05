@@ -136,6 +136,8 @@ class Expman_Servers_Page {
             'sync_bulk'                  => array( 'expman_sync_servers_bulk', 'expman_sync_servers_bulk_nonce' ),
             'sync_single'                => array( 'expman_servers_row_action', 'expman_servers_row_action_nonce' ),
             'trash_server'               => array( 'expman_servers_row_action', 'expman_servers_row_action_nonce' ),
+            'archive_server'             => array( 'expman_servers_row_action', 'expman_servers_row_action_nonce' ),
+            'unarchive_server'           => array( 'expman_servers_row_action', 'expman_servers_row_action_nonce' ),
             'restore_server'             => array( 'expman_restore_server', 'expman_restore_server_nonce' ),
             'delete_server_permanently'  => array( 'expman_delete_server_permanently', 'expman_delete_server_permanently_nonce' ),
             'empty_trash'                => array( 'expman_empty_servers_trash', 'expman_empty_servers_trash_nonce' ),
@@ -164,6 +166,16 @@ class Expman_Servers_Page {
             case 'trash_server':
                 $this->actions->action_trash_server();
                 $redirect_tab = 'main';
+                break;
+
+            case 'archive_server':
+                $this->actions->action_archive_server();
+                $redirect_tab = $redirect_tab ?: 'main';
+                break;
+
+            case 'unarchive_server':
+                $this->actions->action_unarchive_server();
+                $redirect_tab = $redirect_tab ?: 'archive';
                 break;
 
             case 'restore_server':
