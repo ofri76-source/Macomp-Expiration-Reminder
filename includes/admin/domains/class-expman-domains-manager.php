@@ -336,30 +336,19 @@ class Expman_Domains_Manager {
         $order = strtoupper( sanitize_key( $_GET['order'] ?? 'ASC' ) );
         if ( ! in_array( $order, array( 'ASC', 'DESC' ), true ) ) { $order = 'ASC'; }
 
-        $per_page = intval( $_GET['per_page'] ?? 20 );
-        $allowed_pp = array( 20, 50, 200, 500 );
-        if ( ! in_array( $per_page, $allowed_pp, true ) ) { $per_page = 20; }
-        $paged = max( 1, intval( $_GET['paged'] ?? 1 ) );
-
         $filters = array(
-            'client_name'     => sanitize_text_field( $_GET['f_client_name'] ?? '' ),
-            'customer_number' => sanitize_text_field( $_GET['f_customer_number'] ?? '' ),
-            'customer_name'   => sanitize_text_field( $_GET['f_customer_name'] ?? '' ),
-            'domain'          => sanitize_text_field( $_GET['f_domain'] ?? '' ),
-            'expiry_date'     => sanitize_text_field( $_GET['f_expiry_date'] ?? '' ),
-            'days_left'       => sanitize_text_field( $_GET['f_days_left'] ?? '' ),
-            'ownership'       => sanitize_text_field( $_GET['f_ownership'] ?? '' ),
-            'payment'         => sanitize_text_field( $_GET['f_payment'] ?? '' ),
+            'client_name'     => '',
+            'customer_number' => '',
+            'customer_name'   => '',
+            'domain'          => '',
+            'expiry_date'     => '',
+            'days_left'       => '',
+            'ownership'       => '',
+            'payment'         => '',
         );
 
         $total = 0;
-        $rows = $this->get_rows( $filters, $orderby, $order, $mode, $per_page, $paged, $total );
-
-        $page_count = max( 1, (int) ceil( max( 0, $total ) / $per_page ) );
-        if ( $paged > $page_count ) { $paged = $page_count; }
-
-        $ajax_url = esc_url( admin_url( 'admin-ajax.php' ) );
-        $nonce = wp_create_nonce( 'expman_domains_fetch' );
+        $rows = $this->get_rows( $filters, $orderby, $order, $mode, 0, 1, $total );
 
         echo '<div class="expman-domains-table-block" data-expman-block="' . esc_attr( $mode ) . '">';
         echo '<h2 style="margin-top:10px;color:#1d2327;">' . esc_html( $title ) . '</h2>';
@@ -375,95 +364,30 @@ class Expman_Domains_Manager {
             echo '</div>';
         }
 
-        echo '<form method="get" action="" class="expman-domains-filter-form" data-expman-table data-ajax="' . esc_attr( $ajax_url ) . '" data-nonce="' . esc_attr( $nonce ) . '" data-mode="' . esc_attr( $mode ) . '">';
-        if ( is_admin() ) {
-            echo '<input type="hidden" name="page" value="expman_domains">';
-            echo '<input type="hidden" name="tab" value="' . esc_attr( $mode === 'trash' ? 'trash' : ( $mode === 'map' ? 'map' : ( $mode === 'archive' ? 'main' : 'main' ) ) ) . '">';
-        } else {
-            // Frontend shortcode uses expman_tab
-            echo '<input type="hidden" name="expman_tab" value="' . esc_attr( ( $mode === 'trash' ? 'trash' : ( $mode === 'map' ? 'map' : 'main' ) ) ) . '">';
-        }
-        echo '<input type="hidden" name="orderby" value="' . esc_attr( $orderby ) . '">';
-        echo '<input type="hidden" name="order" value="' . esc_attr( $order ) . '">';
-        echo '<input type="hidden" name="paged" value="' . esc_attr( $paged ) . '">';
-
-        echo '<div class="expman-domains-table-controls" style="display:flex;gap:10px;align-items:center;justify-content:space-between;flex-wrap:wrap;margin:10px 0;">';
-        echo '<div style="display:flex;gap:8px;align-items:center;">';
-        echo '<span style="font-weight:600;">הצג</span>';
-        echo '<select name="per_page" style="height:28px;padding:4px 6px;border:1px solid #c7d1e0;border-radius:6px;">';
-        foreach ( array( 20, 50, 200, 500 ) as $pp ) {
-            echo '<option value="' . esc_attr( $pp ) . '" ' . selected( $per_page, $pp, false ) . '>' . esc_html( $pp ) . '</option>';
-        }
+        echo '<div class="expman-client-wrap" data-module="domains">';
+        echo '<div class="expman-toolbar">';
+        echo '<input class="expman-filter" data-field="any" placeholder="חיפוש...">';
+        echo '<select class="expman-per-page">';
+        echo '<option>25</option><option>50</option><option>100</option><option>200</option>';
         echo '</select>';
-        echo '<span>רשומות</span>';
-        echo '</div>';
-
-        echo '<div style="display:flex;gap:8px;align-items:center;">';
-        echo '<button type="button" class="expman-btn secondary" data-expman-prev ' . ( $paged <= 1 ? 'disabled' : '' ) . '>קודם</button>';
-        echo '<span data-expman-page-info>עמוד ' . esc_html( $paged ) . ' מתוך ' . esc_html( $page_count ) . ' (סה״כ ' . esc_html( $total ) . ')</span>';
-        echo '<button type="button" class="expman-btn secondary" data-expman-next ' . ( $paged >= $page_count ? 'disabled' : '' ) . '>הבא</button>';
-        echo '</div>';
-
-        echo '<div>';
-        echo '<button type="submit" class="expman-btn secondary">רענן</button>';
-        echo '</div>';
         echo '</div>';
 
         $cols = $this->columns_for_mode( $mode );
         $colcount = count( $cols );
 
-        $base = remove_query_arg( array( 'orderby', 'order' ) );
-
-        echo '<table class="widefat striped">';
+        echo '<table class="wp-list-table widefat fixed striped expman-client-table">';
         echo '<thead><tr>';
         foreach ( $cols as $key => $label ) {
-            $this->th_sort( $key, $label, $orderby, $order, $base );
+            echo '<th>' . esc_html( $label ) . '</th>';
         }
-        echo '</tr>';
-
-        // Filter row: only for columns
-        echo '<tr class="expman-filter-row">';
-        foreach ( $cols as $key => $label ) {
-            if ( $key === 'ownership' ) {
-                echo '<th><select name="f_ownership" style="width:100%;">';
-                echo '<option value="">הכל</option>';
-                echo '<option value="ours" ' . selected( $filters['ownership'], 'ours', false ) . '>שלנו</option>';
-                echo '<option value="not_ours" ' . selected( $filters['ownership'], 'not_ours', false ) . '>לא שלנו</option>';
-                echo '</select></th>';
-            } elseif ( $key === 'payment' ) {
-                echo '<th><select name="f_payment" style="width:100%;">';
-                echo '<option value="">הכל</option>';
-                echo '<option value="ours" ' . selected( $filters['payment'], 'ours', false ) . '>שלנו</option>';
-                echo '<option value="customer" ' . selected( $filters['payment'], 'customer', false ) . '>לקוח</option>';
-                echo '</select></th>';
-            } elseif ( $key === 'expiry_date' ) {
-                $expiry_exact_ui = $this->format_db_date_to_ui( (string) $filters['expiry_date'] );
-                echo '<th><input style="width:100%" name="f_expiry_date" value="' . esc_attr( $expiry_exact_ui ) . '" placeholder="dd/mm/yyyy"></th>';
-            } elseif ( $key === 'days_left' ) {
-                echo '<th><input style="width:100%" name="f_days_left" value="' . esc_attr( $filters['days_left'] ) . '" placeholder="ימים..."></th>';
-            } else {
-                $map = array(
-                    'client_name' => 'f_client_name',
-                    'customer_number' => 'f_customer_number',
-                    'customer_name' => 'f_customer_name',
-                    'domain' => 'f_domain',
-                );
-                $fname = $map[ $key ] ?? '';
-                if ( $fname !== '' ) {
-                    $val_key = str_replace( 'f_', '', $fname );
-                    echo '<th><input style="width:100%" name="' . esc_attr( $fname ) . '" value="' . esc_attr( (string) ( $filters[ $val_key ] ?? '' ) ) . '" placeholder="סינון..."></th>';
-                } else {
-                    echo '<th></th>';
-                }
-            }
-        }
-        echo '</tr>';
-        echo '</thead>';
+        echo '</tr></thead>';
 
         echo '<tbody data-expman-body data-expman-colcount="' . esc_attr( $colcount ) . '">';
         echo $this->render_rows_html( $rows, $mode, $colcount, array_keys( $cols ) );
         echo '</tbody></table>';
-        echo '</form>';
+        echo '<div class="expman-pager"></div>';
+        echo '</div>';
+
         echo '</div>';
     }
 
@@ -615,8 +539,12 @@ class Expman_Domains_Manager {
 
             $row_class = ( $row_index % 2 === 0 ) ? 'expman-row-alt' : '';
             $status_attr = str_replace( 'expman-days-', '', $days_class );
+            $domain = (string) ( $row['domain'] ?? '' );
+            $registrar = (string) ( $row['registrar'] ?? '' );
+            $client = (string) ( $row['customer_name'] ?? ( $row['client_name'] ?? '' ) );
+            $any = trim( $domain . ' ' . $registrar . ' ' . $client . ' ' . (string) ( $row['customer_number'] ?? '' ) . ' ' . (string) ( $row['notes'] ?? '' ) );
 
-            $html .= '<tr class="expman-row ' . esc_attr( $row_class ) . '" data-id="' . esc_attr( $row_id ) . '" data-expman-status="' . esc_attr( $status_attr ) . '">';
+            $html .= '<tr class="expman-row ' . esc_attr( $row_class ) . '" data-id="' . esc_attr( $row_id ) . '" data-status="' . esc_attr( $status_attr ) . '" data-domain="' . esc_attr( $domain ) . '" data-registrar="' . esc_attr( $registrar ) . '" data-client="' . esc_attr( $client ) . '" data-any="' . esc_attr( $any ) . '" data-expman-status="' . esc_attr( $status_attr ) . '">';
 
             foreach ( $colkeys as $k ) {
                 if ( $k === 'domain' ) {
@@ -753,10 +681,8 @@ class Expman_Domains_Manager {
                         e.preventDefault();
                         var form = close.closest("form");
                         if(form && form.classList.contains("expman-domains-form")){
-                            // If inside edit row - hide it
                             var editRow = close.closest("tr.expman-edit");
                             if(editRow){ editRow.style.display = "none"; return; }
-                            // If in \"new\" panel - collapse panel
                             var add = close.closest(".expman-domains-add");
                             if(add){ add.style.display = "none"; return; }
                         }
@@ -764,16 +690,6 @@ class Expman_Domains_Manager {
                 });
             }
 
-            function debounce(fn, delay){
-                let t;
-                return function(){
-                    const args = arguments;
-                    clearTimeout(t);
-                    t = setTimeout(function(){ fn.apply(null, args); }, delay);
-                };
-            }
-
-            // Summary cards filter (only affects first block on page - main)
             function initSummary(){
                 const block = wrap.querySelector(".expman-domains-table-block[data-expman-block=\'main\']");
                 if(!block) return;
@@ -784,18 +700,9 @@ class Expman_Domains_Manager {
                     });
                 }
                 function applyStatusFilter(status){
-                    block.querySelectorAll("tr.expman-row").forEach(function(row){
-                        var rowStatus = row.getAttribute("data-expman-status") || "";
-                        var show = (status === "all") || (rowStatus === status);
-                        row.style.display = show ? "" : "none";
-                        var id = row.getAttribute("data-id");
-                        if(id){
-                            var detail = block.querySelector("tr.expman-details[data-for=\'" + id + "\']");
-                            var edit = block.querySelector("tr.expman-edit[data-for=\'" + id + "\']");
-                            if(detail) detail.style.display = "none";
-                            if(edit) edit.style.display = "none";
-                        }
-                    });
+                    var clientWrap = block.querySelector(".expman-client-wrap") || block;
+                    clientWrap.dataset.expmanStatusFilter = status;
+                    document.dispatchEvent(new CustomEvent("expman:tableUpdate", {detail:{wrap:clientWrap}}));
                 }
                 block.querySelectorAll(".expman-summary-card, .expman-summary-meta").forEach(function(card){
                     card.addEventListener("click", function(){
@@ -807,106 +714,14 @@ class Expman_Domains_Manager {
                 setActiveSummary("all");
             }
 
-            function initTableBlock(block){
-                const form = block.querySelector("form[data-expman-table]");
-                if(!form) return;
-
+            wrap.querySelectorAll(".expman-domains-table-block").forEach(function(block){
                 wireAddToggle(block);
                 wireRowClicks(block);
                 wireEditButtons(block);
+            });
 
-                const ajax = form.getAttribute("data-ajax");
-                const nonce = form.getAttribute("data-nonce");
-                const mode = form.getAttribute("data-mode");
-                const body = form.querySelector("[data-expman-body]");
-
-                const pagedInput = form.querySelector("input[name=\'paged\']");
-                const perPageSelect = form.querySelector("select[name=\'per_page\']");
-                const pageInfo = block.querySelector("[data-expman-page-info]");
-                const prevBtn = block.querySelector("[data-expman-prev]");
-                const nextBtn = block.querySelector("[data-expman-next]");
-
-                function setPage(n){
-                    if(pagedInput){ pagedInput.value = String(Math.max(1, parseInt(n||1,10) || 1)); }
-                }
-
-                function runFetch(){
-                    if(!ajax || !body) return;
-                    const data = new FormData(form);
-                    data.append("action", "expman_domains_fetch");
-                    data.append("nonce", nonce || "");
-                    data.append("mode", mode || "main");
-
-                    fetch(ajax, { method:"POST", body:data })
-                        .then(r=>r.json())
-                        .then(function(res){
-                            if(!res || !res.success){return;}
-                            body.innerHTML = res.data.html || "";
-                            wireRowClicks(block);
-                            wireEditButtons(block);
-
-                            if(res.data){
-                                const total = parseInt(res.data.total||0,10) || 0;
-                                const pp = parseInt(res.data.per_page|| (perPageSelect ? perPageSelect.value : 20),10) || 20;
-                                const pg = parseInt(res.data.paged|| (pagedInput ? pagedInput.value : 1),10) || 1;
-                                const pages = Math.max(1, Math.ceil(total / pp));
-                                if(pageInfo){ pageInfo.textContent = "עמוד " + pg + " מתוך " + pages + " (סה״כ " + total + ")"; }
-                                if(prevBtn){ prevBtn.disabled = (pg <= 1); }
-                                if(nextBtn){ nextBtn.disabled = (pg >= pages); }
-                            }
-                        })
-                        .catch(()=>{});
-                }
-
-                if(perPageSelect){
-                    perPageSelect.addEventListener("change", function(){ setPage(1); runFetch(); });
-                }
-                if(prevBtn){
-                    prevBtn.addEventListener("click", function(){
-                        const cur = pagedInput ? parseInt(pagedInput.value||"1",10) : 1;
-                        setPage(cur-1); runFetch();
-                    });
-                }
-                if(nextBtn){
-                    nextBtn.addEventListener("click", function(){
-                        const cur = pagedInput ? parseInt(pagedInput.value||"1",10) : 1;
-                        setPage(cur+1); runFetch();
-                    });
-                }
-
-                block.addEventListener("click", function(e){
-                    var a = e.target.closest("a.expman-sort");
-                    if(!a){return;}
-                    e.preventDefault();
-                    var ob = a.getAttribute("data-orderby") || "";
-                    var or = a.getAttribute("data-order") || "";
-                    var obInput = form.querySelector("input[name=\'orderby\']");
-                    var orInput = form.querySelector("input[name=\'order\']");
-                    if(obInput) obInput.value = ob;
-                    if(orInput) orInput.value = or;
-                    setPage(1);
-                    runFetch();
-                });
-
-                form.addEventListener("submit", function(e){
-                    e.preventDefault();
-                    setPage(1);
-                    runFetch();
-                });
-
-                const debounced = debounce(runFetch, 350);
-                form.querySelectorAll(".expman-filter-row input").forEach(function(input){
-                    input.addEventListener("input", function(){ setPage(1); debounced(); });
-                    input.addEventListener("change", function(){ setPage(1); runFetch(); });
-                });
-                form.querySelectorAll(".expman-filter-row select").forEach(function(sel){
-                    sel.addEventListener("change", function(){ setPage(1); runFetch(); });
-                });
-            }
-
-            wrap.querySelectorAll(".expman-domains-table-block").forEach(initTableBlock);
-            wireCloseButtons(wrap);
             initSummary();
+            wireCloseButtons(wrap);
         })();
         </script>';
     }
@@ -1272,9 +1087,9 @@ class Expman_Domains_Manager {
         );
         $select_sql = implode( ', ', $select_parts );
 
-        $per_page = max( 1, (int) $per_page );
+        $per_page = (int) $per_page;
         $paged    = max( 1, (int) $paged );
-        $offset   = ( $paged - 1 ) * $per_page;
+        $offset   = ( $paged - 1 ) * max( 1, $per_page );
 
         $where_for_select = $where;
         $count_sql = "SELECT COUNT(*) FROM {$table} WHERE " . implode( ' AND ', $where_for_select );
@@ -1296,15 +1111,22 @@ class Expman_Domains_Manager {
             $total = (int) $wpdb->get_var( $count_sql2 );
         }
 
-        $max_page = max( 1, (int) ceil( max( 0, $total ) / $per_page ) );
-        if ( $paged > $max_page ) {
-            $paged  = $max_page;
-            $offset = ( $paged - 1 ) * $per_page;
-        }
+        if ( $per_page > 0 ) {
+            $max_page = max( 1, (int) ceil( max( 0, $total ) / $per_page ) );
+            if ( $paged > $max_page ) {
+                $paged  = $max_page;
+                $offset = ( $paged - 1 ) * $per_page;
+            }
 
-        $sql = "SELECT {$select_sql} FROM {$table} WHERE " . implode( ' AND ', $where_for_select ) . " ORDER BY {$order_clause} LIMIT %d OFFSET %d";
-        $sql_params = array_merge( $params, array( $per_page, $offset ) );
-        $sql = $wpdb->prepare( $sql, $sql_params );
+            $sql = "SELECT {$select_sql} FROM {$table} WHERE " . implode( ' AND ', $where_for_select ) . " ORDER BY {$order_clause} LIMIT %d OFFSET %d";
+            $sql_params = array_merge( $params, array( max( 1, $per_page ), $offset ) );
+            $sql = $wpdb->prepare( $sql, $sql_params );
+        } else {
+            $sql = "SELECT {$select_sql} FROM {$table} WHERE " . implode( ' AND ', $where_for_select ) . " ORDER BY {$order_clause}";
+            if ( ! empty( $params ) ) {
+                $sql = $wpdb->prepare( $sql, $params );
+            }
+        }
 
         $rows = $wpdb->get_results( $sql, ARRAY_A );
         if ( ! empty( $wpdb->last_error ) ) {

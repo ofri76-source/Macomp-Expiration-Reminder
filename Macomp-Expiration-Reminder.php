@@ -48,6 +48,8 @@ class Expiry_Manager_Plugin {
         add_action( 'wp_ajax_expman_customer_search', array( $this, 'ajax_customer_search' ) );
         add_action( 'admin_post_expman_server_create', array( $this, 'handle_expman_server_create' ) );
         add_action( 'admin_post_expman_ssl_single_check', array( $this, 'handle_expman_ssl_single_check' ) );
+        add_action( 'admin_enqueue_scripts', array( $this, 'enqueue_admin_assets' ) );
+        add_action( 'wp_enqueue_scripts', array( $this, 'enqueue_public_assets' ) );
         // SSL Certs (parallel mode) - export/import + trash actions
         add_action( 'admin_post_expman_ssl_export', array( $this, 'handle_expman_ssl_export' ) );
         add_action( 'admin_post_expman_ssl_import', array( $this, 'handle_expman_ssl_import' ) );
@@ -75,6 +77,26 @@ class Expiry_Manager_Plugin {
         if ( ! $redirect ) { $redirect = $fallback; }
         if ( ! $redirect ) { $redirect = home_url( '/' ); }
         return $redirect;
+    }
+
+    public function enqueue_admin_assets() {
+        wp_enqueue_script(
+            'expman-client-table',
+            plugins_url( 'assets/expman-client-table.js', __FILE__ ),
+            array(),
+            self::VERSION,
+            true
+        );
+    }
+
+    public function enqueue_public_assets() {
+        wp_enqueue_script(
+            'expman-client-table',
+            plugins_url( 'assets/expman-client-table.js', __FILE__ ),
+            array(),
+            self::VERSION,
+            true
+        );
     }
 
     public function render_required_fields_helper() {
