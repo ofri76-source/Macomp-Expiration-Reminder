@@ -1,0 +1,32 @@
+
+.expman-portal{width:100%;}
+.expman-portal-nav{
+  display:flex;
+  gap:10px;
+  flex-wrap:wrap;
+  align-items:center;
+  justify-content:center;
+  margin: 10px 0 18px;
+}
+.expman-portal-tab{
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  padding:10px 18px;
+  border-radius:999px;
+  background:#2b5cab;
+  color:#fff;
+  text-decoration:none;
+  font-weight:700;
+  border:1px solid rgba(0,0,0,0.05);
+}
+.expman-portal-tab:hover{opacity:0.92;color:#fff;}
+.expman-portal-tab.is-active{
+  background:#cfe3ff;
+  color:#0b2d63;
+  border-color:#0b2d63;
+}
+.expman-portal.is-loading .expman-portal-content{
+  opacity:0.55;
+  pointer-events:none;
+}

@@ -1,0 +1,233 @@
+/* Self-contained form styling (no reliance on theme/admin styles) */
+#expman-ssl-modal.expman-ssl-form{
+  direction: rtl;
+  text-align: right;
+  background: #ffffff;
+  border: 1px solid #d0d7de;
+  border-radius: 16px;
+  padding: 16px 16px 14px;
+  margin: 14px auto;
+  max-width: 1180px;
+  width: calc(100% - 28px);
+  box-shadow: 0 6px 24px rgba(0,0,0,0.06);
+  font-family: Arial, "Heebo", "Segoe UI", sans-serif;
+}
+
+#expman-ssl-modal.expman-ssl-form *{ box-sizing: border-box; }
+
+#expman-ssl-modal .expman-ssl-form__header{
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+#expman-ssl-modal .expman-ssl-form__title{
+  font-size: 20px;
+  font-weight: 800;
+  color: #0f172a;
+}
+
+#expman-ssl-modal .expman-ssl-form__msg{
+  display: none;
+  padding: 10px 12px;
+  border-radius: 12px;
+  font-weight: 700;
+  margin: 10px 0 12px;
+  border: 1px solid transparent;
+}
+#expman-ssl-modal .expman-ssl-form__msg.ok{ display:block; background:#ecfbf4; border-color:#bfead4; color:#1b5a39; }
+#expman-ssl-modal .expman-ssl-form__msg.err{ display:block; background:#ffecec; border-color:#f3b6b6; color:#7a1f1f; }
+
+#expman-ssl-modal .expman-ssl-form__grid{
+  display: grid;
+  grid-template-columns: 380px 1fr 1fr;
+  grid-template-areas: "cust colB colA";
+  gap: 12px 16px;
+  align-items: start;
+}
+
+#expman-ssl-modal .expman-ssl-form__col{ display: flex; flex-direction: column; gap: 10px; }
+#expman-ssl-modal .expman-ssl-form__col--a{ grid-area: colA; }
+#expman-ssl-modal .expman-ssl-form__col--b{ grid-area: colB; }
+
+#expman-ssl-modal .expman-ssl-form__label{
+  min-width: 110px;
+  font-weight: 800;
+  color: #183153;
+  white-space: nowrap;
+}
+
+#expman-ssl-modal .expman-ssl-form__row{
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+#expman-ssl-modal .expman-ssl-form__control{ flex: 1; position: relative; }
+#expman-ssl-modal .expman-ssl-form__control--stack{ display: flex; gap: 10px; align-items: center; }
+#expman-ssl-modal .expman-ssl-form__control--stack select{ flex: 1; }
+
+#expman-ssl-modal input[type="text"],
+#expman-ssl-modal input[type="url"],
+#expman-ssl-modal select,
+#expman-ssl-modal textarea{
+  width: 100%;
+  border: 1px solid #cfd8e3;
+  border-radius: 10px;
+  background: #ffffff;
+  padding: 7px 10px;
+  font-size: 13px;
+  line-height: 18px;
+  outline: none;
+}
+
+#expman-ssl-modal textarea{ resize: vertical; min-height: 110px; }
+#expman-ssl-modal input[readonly]{ background: #f6f8fb; }
+
+#expman-ssl-modal input:focus,
+#expman-ssl-modal select:focus,
+#expman-ssl-modal textarea:focus{
+  border-color: #2563eb;
+  box-shadow: 0 0 0 3px rgba(37,99,235,0.12);
+}
+
+#expman-ssl-modal .expman-ssl-form__inline{
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+
+#expman-ssl-modal .expman-ssl-form__checks{
+  display: flex;
+  gap: 14px;
+  flex-wrap: wrap;
+  align-items: center;
+  padding-top: 2px;
+}
+#expman-ssl-modal .expman-ssl-form__checks--compact{
+  margin-top: 4px;
+}
+#expman-ssl-modal .expman-ssl-form__check{ display:flex; align-items:center; gap:8px; font-weight:800; color:#0f172a; }
+
+#expman-ssl-modal .expman-ssl-form__customerbox{
+  grid-area: cust;
+  border: 2px dashed #c7d2fe;
+  border-radius: 16px;
+  padding: 12px;
+  background: #fbfdff;
+}
+#expman-ssl-modal .expman-ssl-form__custrow{
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+#expman-ssl-modal .expman-ssl-form__custrow:last-of-type{ margin-bottom: 6px; }
+
+#expman-ssl-modal .expman-ssl-form__hint{
+  font-size: 12px;
+  color: #5a6b82;
+  margin-top: 6px;
+}
+
+#expman-ssl-modal .expman-ssl-form__widegrid{
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+  margin-top: 6px;
+}
+
+#expman-ssl-modal .expman-ssl-form__sectiontitle{
+  font-weight: 900;
+  color: #0f172a;
+  margin: 6px 0 8px;
+}
+
+#expman-ssl-modal .expman-ssl-form__file{
+  grid-column: 1 / -1;
+  margin-top: 4px;
+}
+
+#expman-ssl-modal .expman-ui-file{
+  width: 100%;
+  border: 1px solid #cfd8e3;
+  border-radius: 10px;
+  padding: 10px;
+}
+
+#expman-ssl-modal .expman-ssl-form__actions{
+  display: flex;
+  gap: 10px;
+  justify-content: flex-start;
+  flex-wrap: wrap;
+  margin-top: 14px;
+}
+
+/* Buttons */
+#expman-ssl-modal .expman-ui-btn{
+  appearance: none;
+  border: 1px solid #cfd8e3;
+  border-radius: 10px;
+  background: #ffffff;
+  padding: 8px 12px;
+  font-weight: 900;
+  font-size: 13px;
+  cursor: pointer;
+  color: #0f172a;
+  line-height: 18px;
+}
+#expman-ssl-modal .expman-ui-btn:hover{ background: #f6f8fb; }
+#expman-ssl-modal .expman-ui-btn:active{ transform: translateY(1px); }
+
+#expman-ssl-modal .expman-ui-btn--primary{
+  background: #2563eb;
+  border-color: #2563eb;
+  color: #ffffff;
+}
+#expman-ssl-modal .expman-ui-btn--primary:hover{ background:#1d4ed8; }
+
+#expman-ssl-modal .expman-ui-btn--danger{
+  background: #b42318;
+  border-color: #b42318;
+  color: #ffffff;
+}
+#expman-ssl-modal .expman-ui-btn--danger:hover{ background:#9a1c13; }
+
+#expman-ssl-modal .expman-ui-btn--ghost{ background: #ffffff; }
+
+/* Customer dropdown */
+#expman-ssl-modal #expman-ssl-cust-dd-inline{
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  left: 0;
+  background: #ffffff;
+  border: 1px solid #cfd8e3;
+  border-radius: 12px;
+  max-height: 260px;
+  overflow: auto;
+  z-index: 99999;
+  box-shadow: 0 10px 24px rgba(0,0,0,0.08);
+}
+
+#expman-ssl-modal #expman-ssl-cust-dd-inline .expman-ssl-cust-item{
+  padding: 10px 12px;
+  cursor: pointer;
+  border-bottom: 1px solid #eef2f7;
+}
+#expman-ssl-modal #expman-ssl-cust-dd-inline .expman-ssl-cust-item:last-child{ border-bottom: 0; }
+#expman-ssl-modal #expman-ssl-cust-dd-inline .expman-ssl-cust-item:hover{ background:#f6f8fb; }
+
+@media (max-width: 1100px){
+  #expman-ssl-modal.expman-ssl-form{ max-width: 760px; }
+  #expman-ssl-modal .expman-ssl-form__grid{
+    grid-template-columns: 1fr;
+    grid-template-areas: "cust" "colB" "colA";
+  }
+  #expman-ssl-modal .expman-ssl-form__widegrid{ grid-template-columns: 1fr; }
+  #expman-ssl-modal .expman-ssl-form__label{ min-width: 120px; }
+  #expman-ssl-modal .expman-ssl-form__control--stack{ flex-direction: column; align-items: stretch; }
+}

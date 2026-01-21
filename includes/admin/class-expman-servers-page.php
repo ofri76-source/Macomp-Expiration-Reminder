@@ -1,17 +1,44 @@
 <?php
 if ( ! defined( 'ABSPATH' ) ) { exit; }
 
-require_once __DIR__ . '/servers/class-expman-servers-logger.php';
-require_once __DIR__ . '/servers/class-expman-servers-importer.php';
-require_once __DIR__ . '/servers/class-expman-servers-actions.php';
-require_once __DIR__ . '/servers/class-expman-servers-ui.php';
-require_once __DIR__ . '/servers/class-expman-servers-schema.php';
-require_once __DIR__ . '/servers/class-expman-servers-dell.php';
-
 if ( ! class_exists( 'Expman_Servers_Page' ) ) {
 class Expman_Servers_Page {
 
-    const TABLE_SERVERS            = 'exp_dell_servers';
+    
+    /**
+     * Load server module dependencies lazily to avoid fatal errors if files are missing
+     * (e.g. partial deployments). Only required when the Servers page is used.
+     */
+    private static function load_dependencies( &$notices = null ) {
+        $base = __DIR__ . '/servers/';
+        $files = array(
+            'class-expman-servers-logger.php',
+            'class-expman-servers-importer.php',
+            'class-expman-servers-actions.php',
+            'class-expman-servers-ui.php',
+            'class-expman-servers-schema.php',
+            'class-expman-servers-dell.php',
+        );
+
+        foreach ( $files as $file ) {
+            $path = $base . $file;
+            if ( file_exists( $path ) ) {
+                require_once $path;
+            } else {
+                if ( is_array( $notices ) ) {
+                    $notices[] = array(
+                        'type' => 'error',
+                        'msg'  => 'Servers module dependency missing: ' . esc_html( $file ),
+                    );
+                }
+                // Do not fatal here; allow plugin to continue loading.
+                return false;
+            }
+        }
+        return true;
+    }
+
+const TABLE_SERVERS            = 'exp_dell_servers';
     const TABLE_SERVER_TRACKING    = 'exp_dell_server_tracking';
     const TABLE_SERVER_LOGS        = 'exp_dell_server_logs';
     const TABLE_SERVER_IMPORT_STAGE= 'exp_dell_servers_import_stage';
@@ -27,7 +54,9 @@ class Expman_Servers_Page {
     private $dell;
 
     public function __construct( $option_key, $version = '21.9.49' ) {
-        $this->option_key = $option_key;
+        
+        if ( ! self::load_dependencies( $this->notices ) ) { return; }
+$this->option_key = $option_key;
         $this->version = $version;
 
         $this->logger   = new Expman_Servers_Logger();
@@ -52,7 +81,18 @@ class Expman_Servers_Page {
     public function get_dell() { return $this->dell; }
 
     public static function install_tables() {
-        Expman_Servers_Schema::install_tables();
+        // During plugin activation, this file may be loaded before the servers sub-classes
+        // are required. Ensure the schema class is available to avoid fatal errors.
+        if ( ! class_exists( 'Expman_Servers_Schema' ) ) {
+            $schema_file = __DIR__ . '/servers/class-expman-servers-schema.php';
+            if ( file_exists( $schema_file ) ) {
+                require_once $schema_file;
+            }
+        }
+
+        if ( class_exists( 'Expman_Servers_Schema' ) && is_callable( array( 'Expman_Servers_Schema', 'install_tables' ) ) ) {
+            Expman_Servers_Schema::install_tables();
+        }
     }
 
     public static function render_public_page( $option_key, $version = '' ) {
