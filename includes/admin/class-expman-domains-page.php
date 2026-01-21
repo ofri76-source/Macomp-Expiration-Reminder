@@ -28,29 +28,38 @@ class Expman_Domains_Page {
 
         echo '<h2 class="nav-tab-wrapper" style="direction:rtl;text-align:right;">';
         foreach ( $tabs as $key => $label ) {
-            $url = admin_url( 'admin.php?page=expman_domains&tab=' . $key );
             $cls = 'nav-tab' . ( $tab === $key ? ' nav-tab-active' : '' );
-            echo '<a class="' . esc_attr( $cls ) . '" href="' . esc_url( $url ) . '">' . esc_html( $label ) . '</a>';
+            echo '<a class="' . esc_attr( $cls ) . '" href="#" data-expman-tab="' . esc_attr( $key ) . '">' . esc_html( $label ) . '</a>';
         }
         echo '</h2>';
 
         echo '<div style="margin-top:12px;">';
-        switch ( $tab ) {
-            case 'trash':
-                $this->drm->render_trash();
-                break;
-            case 'settings':
-                $this->drm->render_settings();
-                break;
-            case 'map':
-                $this->drm->render_map();
-                break;
-            case 'main':
-            default:
-                $this->drm->render_admin();
-                break;
-        }
+        echo '<div data-expman-panel="main"' . ( $tab === 'main' ? '' : ' style="display:none;"' ) . '>';
+        $this->drm->render_admin();
         echo '</div>';
+
+        echo '<div data-expman-panel="trash"' . ( $tab === 'trash' ? '' : ' style="display:none;"' ) . '>';
+        $this->drm->render_trash();
+        echo '</div>';
+
+        echo '<div data-expman-panel="settings"' . ( $tab === 'settings' ? '' : ' style="display:none;"' ) . '>';
+        $this->drm->render_settings();
+        echo '</div>';
+
+        echo '<div data-expman-panel="map"' . ( $tab === 'map' ? '' : ' style="display:none;"' ) . '>';
+        $this->drm->render_map();
+        echo '</div>';
+        echo '</div>';
+
+        echo '<script>(function(){\n';
+        echo 'const tabs=document.querySelectorAll(".nav-tab-wrapper [data-expman-tab]");\n';
+        echo 'function show(tab){\n';
+        echo 'document.querySelectorAll("[data-expman-panel]").forEach(function(panel){panel.style.display=(panel.getAttribute("data-expman-panel")===tab)?"block":"none";});\n';
+        echo 'tabs.forEach(function(btn){btn.classList.toggle("nav-tab-active", btn.getAttribute("data-expman-tab")===tab);});\n';
+        echo 'var url=new URL(window.location.href);url.searchParams.set("tab",tab);history.replaceState(null,"",url.toString());\n';
+        echo '}\n';
+        echo 'tabs.forEach(function(btn){btn.addEventListener("click",function(e){e.preventDefault();show(btn.getAttribute("data-expman-tab"));});});\n';
+        echo '})();</script>';
 
         echo '</div>';
     }

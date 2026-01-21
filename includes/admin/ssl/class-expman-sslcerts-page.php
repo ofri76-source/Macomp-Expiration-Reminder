@@ -1017,16 +1017,20 @@ echo '<div class="expman-table-wrap" style="overflow:auto;border:1px solid #d5de
             'initial_tab'    => $initial_tab,
             'log_nonce'      => wp_create_nonce( 'expman_ssl_render_logs' ),
         );
-        echo '<script>window.expmanSslCfg = window.expmanSslCfg || {};' .
+        $plugin_file = dirname( __FILE__, 4 ) . '/Macomp-Expiration-Reminder.php';
+        wp_enqueue_script(
+            'expman-ssl-ui',
+            plugins_url( 'assets/expman-ssl-ui.js', $plugin_file ),
+            array( 'jquery' ),
+            Expiry_Manager_Plugin::VERSION,
+            true
+        );
+        $inline_cfg = 'window.expmanSslCfg = window.expmanSslCfg || {};' .
             'window.expmanSslCfg.ajaxurl = ' . wp_json_encode( $cfg['ajaxurl'] ) . ';' .
             'window.expmanSslCfg.customer_nonce = ' . wp_json_encode( $cfg['customer_nonce'] ) . ';' .
             'window.expmanSslCfg.initial_tab = ' . wp_json_encode( $cfg['initial_tab'] ) . ';' .
-            'window.expmanSslCfg.log_nonce = ' . wp_json_encode( $cfg['log_nonce'] ) . ';' .
-            '</script>';
-        // Load SSL UI logic from an external script (prevents inline-script parse issues).
-        $plugin_file = dirname( __FILE__, 4 ) . '/Macomp-Expiration-Reminder.php';
-        $src = plugins_url( 'assets/expman-ssl-ui.js', $plugin_file );
-        echo '<script src="' . esc_url( $src ) . '"></script>';
+            'window.expmanSslCfg.log_nonce = ' . wp_json_encode( $cfg['log_nonce'] ) . ';';
+        wp_add_inline_script( 'expman-ssl-ui', $inline_cfg, 'before' );
 
         echo '</div>'; // expman-ssl-tab-list
 
