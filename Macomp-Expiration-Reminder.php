@@ -2,7 +2,7 @@
 /*
 Plugin Name: Macomp Expiration Reminder
 Description: מערכת ניהול תאריכי תפוגה לרכיבים (חומות אש, תעודות, דומיינים, שרתים).
-Version: 21.9.49
+Version: 21.9.50
 Author: O.k Software
 Text Domain: expiry-manager
 */
@@ -13,6 +13,7 @@ require_once plugin_dir_path(__FILE__) . 'includes/admin/class-expman-nav.php';
 require_once plugin_dir_path(__FILE__) . 'includes/admin/class-expman-dashboard-page.php';
 require_once plugin_dir_path(__FILE__) . 'includes/admin/class-expman-firewalls-page.php';
 require_once plugin_dir_path(__FILE__) . 'includes/admin/class-expman-servers-page.php';
+require_once plugin_dir_path(__FILE__) . 'includes/admin/class-expman-sslcerts-page.php';
 require_once plugin_dir_path(__FILE__) . 'includes/admin/class-expman-generic-items-page.php';
 require_once plugin_dir_path(__FILE__) . 'includes/admin/class-expman-trash-page.php';
 require_once plugin_dir_path(__FILE__) . 'includes/admin/class-expman-logs-page.php';
@@ -25,7 +26,7 @@ class Expiry_Manager_Plugin {
     const DB_TABLE_ITEMS = 'exp_items';
     const DB_TABLE_LOGS  = 'exp_logs';
     const OPTION_KEY     = 'expman_settings';
-    const VERSION = '21.9.49';
+    const VERSION = '21.9.50';
 
     private static $instance = null;
 
@@ -46,6 +47,14 @@ class Expiry_Manager_Plugin {
         add_action( 'admin_init', array( $this, 'maybe_install_tables' ) );
         add_action( 'wp_ajax_expman_customer_search', array( $this, 'ajax_customer_search' ) );
         add_action( 'admin_post_expman_server_create', array( $this, 'handle_expman_server_create' ) );
+        add_action( 'admin_post_expman_ssl_single_check', array( $this, 'handle_expman_ssl_single_check' ) );
+        // SSL Certs (parallel mode) - export/import + trash actions
+        add_action( 'admin_post_expman_ssl_export', array( $this, 'handle_expman_ssl_export' ) );
+        add_action( 'admin_post_expman_ssl_import', array( $this, 'handle_expman_ssl_import' ) );
+        add_action( 'admin_post_expman_ssl_trash', array( $this, 'handle_expman_ssl_trash' ) );
+        add_action( 'admin_post_expman_ssl_restore', array( $this, 'handle_expman_ssl_restore' ) );
+        add_action( 'admin_post_expman_ssl_delete_permanent', array( $this, 'handle_expman_ssl_delete_permanent' ) );
+        add_action( 'admin_post_expman_ssl_save_record', array( $this, 'handle_expman_ssl_save_record' ) );
         add_action( 'admin_post_expman_export_servers_csv', array( $this, 'handle_expman_export_servers_csv' ) );
         add_action( 'admin_post_nopriv_expman_export_servers_csv', array( $this, 'handle_expman_export_servers_csv' ) );
         add_action( 'admin_footer', array( $this, 'render_required_fields_helper' ) );
@@ -55,6 +64,18 @@ class Expiry_Manager_Plugin {
             $this->domains_manager = new Expman_Domains_Manager();
         }
 }
+
+    private function expman_redirect_back( $fallback = '' ) {
+        $redirect = '';
+        if ( ! empty( $_REQUEST['redirect_to'] ) ) {
+            $candidate = esc_url_raw( wp_unslash( $_REQUEST['redirect_to'] ) );
+            if ( $candidate ) { $redirect = $candidate; }
+        }
+        if ( ! $redirect ) { $redirect = wp_get_referer(); }
+        if ( ! $redirect ) { $redirect = $fallback; }
+        if ( ! $redirect ) { $redirect = home_url( '/' ); }
+        return $redirect;
+    }
 
     public function render_required_fields_helper() {
         echo '<style>
@@ -145,6 +166,15 @@ class Expiry_Manager_Plugin {
         }
         if ( class_exists('Expman_Servers_Page') ) {
             Expman_Servers_Page::install_tables();
+        }
+
+        // SSL logs (separate table)
+        $ssl_logs_file = plugin_dir_path( __FILE__ ) . 'includes/admin/ssl/class-expman-ssl-logs.php';
+        if ( file_exists( $ssl_logs_file ) ) {
+            require_once $ssl_logs_file;
+            if ( class_exists( 'Expman_SSL_Logs' ) ) {
+                Expman_SSL_Logs::install_table();
+            }
         }
 
         if ( ! get_option( self::OPTION_KEY ) ) {
@@ -253,41 +283,76 @@ add_submenu_page('expman_dashboard', 'שרתים', 'שרתים', 'read', 'expman
             wp_send_json( array( 'items' => array() ) );
         }
 
-        $settings = get_option( self::OPTION_KEY, array() );
-        $raw_table = preg_replace( '/[^a-zA-Z0-9_]/', '', (string) ( $settings['customers_table'] ?? '' ) );
-        $candidates = array();
-        if ( $raw_table !== '' ) {
-            $candidates[] = $raw_table;
-            if ( strpos( $raw_table, $wpdb->prefix ) !== 0 ) {
-                $candidates[] = $wpdb->prefix . $raw_table;
-            }
-        }
-        $candidates[] = $wpdb->prefix . 'dc_customers';
+        // Performance: resolve customer table & columns once, cache in transient.
+        // This endpoint can be hit on every keystroke, so avoiding SHOW TABLES/COLUMNS is critical.
+        $cache_key = 'expman_customer_search_tableinfo_v1';
+        $info = get_transient( $cache_key );
 
-        $table = '';
-        foreach ( $candidates as $candidate ) {
-            $exists = $wpdb->get_var( $wpdb->prepare( "SHOW TABLES LIKE %s", $candidate ) );
-            if ( $exists === $candidate ) {
-                $table = $candidate;
-                break;
+        if ( ! is_array( $info ) || empty( $info['table'] ) ) {
+            $settings  = get_option( self::OPTION_KEY, array() );
+            $raw_table = preg_replace( '/[^a-zA-Z0-9_]/', '', (string) ( $settings['customers_table'] ?? '' ) );
+            $candidates = array();
+
+            if ( $raw_table !== '' ) {
+                $candidates[] = $raw_table;
+                if ( strpos( $raw_table, $wpdb->prefix ) !== 0 ) {
+                    $candidates[] = $wpdb->prefix . $raw_table;
+                }
             }
+            $candidates[] = $wpdb->prefix . 'dc_customers';
+
+            $table = '';
+            foreach ( $candidates as $candidate ) {
+                $exists = $wpdb->get_var( $wpdb->prepare( "SHOW TABLES LIKE %s", $candidate ) );
+                if ( $exists === $candidate ) {
+                    $table = $candidate;
+                    break;
+                }
+            }
+            if ( $table === '' ) {
+                wp_send_json( array( 'items' => array() ) );
+            }
+
+            // Resolve column names once (some installs use slightly different names)
+            $cols = $wpdb->get_col( "SHOW COLUMNS FROM {$table}", 0 );
+            if ( ! is_array( $cols ) ) { $cols = array(); }
+            $cols_lc = array();
+            foreach ( $cols as $c ) { $cols_lc[ strtolower( (string) $c ) ] = (string) $c; }
+
+            $name_col = $cols_lc['customer_name'] ?? ( $cols_lc['name'] ?? ( $cols_lc['client_name'] ?? 'customer_name' ) );
+            $num_col  = $cols_lc['customer_number'] ?? ( $cols_lc['number'] ?? ( $cols_lc['customer_no'] ?? 'customer_number' ) );
+            $id_col   = $cols_lc['id'] ?? 'id';
+            $has_is_deleted = isset( $cols_lc['is_deleted'] );
+
+            $info = array(
+                'table' => $table,
+                'id_col' => $id_col,
+                'name_col' => $name_col,
+                'num_col' => $num_col,
+                'has_is_deleted' => $has_is_deleted ? 1 : 0,
+            );
+
+            // Cache for 12 hours.
+            set_transient( $cache_key, $info, 12 * HOUR_IN_SECONDS );
         }
-        if ( $table === '' ) {
-            wp_send_json( array( 'items' => array() ) );
-        }
+
+        $table = $info['table'];
+        $id_col = $info['id_col'] ?? 'id';
+        $name_col = $info['name_col'] ?? 'customer_name';
+        $num_col  = $info['num_col'] ?? 'customer_number';
+        $deleted_clause = ! empty( $info['has_is_deleted'] ) ? 'is_deleted=0 AND ' : '';
+
         $like  = '%' . $wpdb->esc_like( $q ) . '%';
-
-        $has_is_deleted = $wpdb->get_var( $wpdb->prepare( "SHOW COLUMNS FROM {$table} LIKE %s", 'is_deleted' ) );
-        $deleted_clause = $has_is_deleted ? 'is_deleted=0 AND ' : '';
 
         $rows = $wpdb->get_results(
             $wpdb->prepare(
-                "SELECT id, customer_name, customer_number
+                "SELECT {$id_col} AS id, {$name_col} AS customer_name, {$num_col} AS customer_number
                  FROM {$table}
-                 WHERE {$deleted_clause}(customer_name LIKE %s OR customer_number LIKE %s)
-                 ORDER BY customer_name ASC
+                 WHERE {$deleted_clause}({$name_col} LIKE %s OR {$num_col} LIKE %s)
+                 ORDER BY {$name_col} ASC
                  LIMIT 50",
-                $like, $like
+                $like,
+                $like
             )
         );
 
@@ -318,6 +383,297 @@ add_submenu_page('expman_dashboard', 'שרתים', 'שרתים', 'read', 'expman
         $page->get_actions()->action_export_csv();
         exit;
     }
+
+    public function handle_expman_ssl_single_check() {
+        $post_id = isset( $_GET['post_id'] ) ? intval( $_GET['post_id'] ) : 0;
+        if ( $post_id <= 0 ) { wp_die( 'Bad post_id' ); }
+
+        $nonce = sanitize_text_field( $_GET['_wpnonce'] ?? '' );
+        if ( ! wp_verify_nonce( $nonce, 'expman_ssl_single_check_' . $post_id ) ) {
+            wp_die( 'Bad nonce' );
+        }
+
+        if ( ! class_exists( 'Expman_SSLCerts_Page' ) ) {
+            wp_die( 'Certificates module missing' );
+        }
+
+        $redirect = '';
+        if ( isset( $_GET['redirect_to'] ) ) {
+            $candidate = esc_url_raw( wp_unslash( $_GET['redirect_to'] ) );
+            if ( $candidate ) { $redirect = $candidate; }
+        }
+        if ( ! $redirect ) { $redirect = wp_get_referer(); }
+        if ( ! $redirect ) { $redirect = home_url( '/' ); }
+
+        $ok = Expman_SSLCerts_Page::enqueue_check_task( $post_id, 'manual' );
+
+        $redirect = remove_query_arg( array( 'expman_ssl_checked', 'expman_ssl_error' ), $redirect );
+        $redirect = add_query_arg( $ok ? 'expman_ssl_checked' : 'expman_ssl_error', $post_id, $redirect );
+
+        wp_safe_redirect( $redirect );
+        exit;
+    }
+
+    public function handle_expman_ssl_export() {
+        if ( ! current_user_can( 'read' ) ) {
+            wp_die( esc_html__( 'Unauthorized', 'expiry-manager' ), 403 );
+        }
+
+        check_admin_referer( 'expman_ssl_export', 'expman_ssl_export_nonce' );
+
+        if ( ! class_exists( 'Expman_SSLCerts_Page' ) ) {
+            wp_die( 'SSL certs module not loaded.' );
+        }
+
+        global $wpdb;
+        $table = $wpdb->prefix . Expman_SSLCerts_Page::CERTS_TABLE;
+        $exists = $wpdb->get_var( $wpdb->prepare( 'SHOW TABLES LIKE %s', $table ) );
+        if ( $exists !== $table ) {
+            wp_die( 'Certificates table not found: ' . esc_html( $table ) );
+        }
+
+        $cols = $wpdb->get_results( "SHOW COLUMNS FROM {$table}", ARRAY_A );
+        $fields = array();
+        foreach ( (array) $cols as $c ) {
+            if ( ! empty( $c['Field'] ) ) { $fields[] = $c['Field']; }
+        }
+        if ( empty( $fields ) ) {
+            wp_die( 'No columns found.' );
+        }
+
+        $rows = $wpdb->get_results( "SELECT * FROM {$table} ORDER BY id ASC", ARRAY_A );
+
+        $filename = 'ssl_certs_export_' . gmdate( 'Ymd_His' ) . '.csv';
+        nocache_headers();
+        header( 'Content-Type: text/csv; charset=utf-8' );
+        header( 'Content-Disposition: attachment; filename=' . $filename );
+
+        $out = fopen( 'php://output', 'w' );
+        if ( $out ) {
+            // UTF-8 BOM so Excel will open Hebrew nicely
+            fprintf( $out, "\xEF\xBB\xBF" );
+            fputcsv( $out, $fields );
+            foreach ( (array) $rows as $r ) {
+                $line = array();
+                foreach ( $fields as $f ) {
+                    $line[] = isset( $r[ $f ] ) ? $r[ $f ] : '';
+                }
+                fputcsv( $out, $line );
+            }
+            fclose( $out );
+        }
+        exit;
+    }
+
+    public function handle_expman_ssl_import() {
+        if ( ! current_user_can( 'read' ) ) {
+            wp_die( esc_html__( 'Unauthorized', 'expiry-manager' ), 403 );
+        }
+
+        check_admin_referer( 'expman_ssl_import', 'expman_ssl_import_nonce' );
+
+        if ( ! class_exists( 'Expman_SSLCerts_Page' ) ) {
+            wp_die( 'SSL certs module not loaded.' );
+        }
+
+        if ( empty( $_FILES['expman_ssl_csv'] ) || empty( $_FILES['expman_ssl_csv']['tmp_name'] ) ) {
+            wp_safe_redirect( add_query_arg( 'expman_ssl_msg', rawurlencode( 'לא נבחר קובץ לייבוא' ), $this->expman_redirect_back() ) );
+            exit;
+        }
+
+        $tmp = $_FILES['expman_ssl_csv']['tmp_name'];
+        $fh = fopen( $tmp, 'r' );
+        if ( ! $fh ) {
+            wp_safe_redirect( add_query_arg( 'expman_ssl_msg', rawurlencode( 'לא ניתן לקרוא את הקובץ' ), $this->expman_redirect_back() ) );
+            exit;
+        }
+
+        global $wpdb;
+        $table = $wpdb->prefix . Expman_SSLCerts_Page::CERTS_TABLE;
+        $exists = $wpdb->get_var( $wpdb->prepare( 'SHOW TABLES LIKE %s', $table ) );
+        if ( $exists !== $table ) {
+            fclose( $fh );
+            wp_safe_redirect( add_query_arg( 'expman_ssl_msg', rawurlencode( 'טבלת תעודות לא נמצאה' ), $this->expman_redirect_back() ) );
+            exit;
+        }
+
+        $cols = $wpdb->get_results( "SHOW COLUMNS FROM {$table}", ARRAY_A );
+        $allowed = array();
+        foreach ( (array) $cols as $c ) {
+            if ( ! empty( $c['Field'] ) ) { $allowed[ $c['Field'] ] = true; }
+        }
+
+        $header = fgetcsv( $fh );
+        if ( ! is_array( $header ) ) {
+            fclose( $fh );
+            wp_safe_redirect( add_query_arg( 'expman_ssl_msg', rawurlencode( 'כותרת CSV לא תקינה' ), $this->expman_redirect_back() ) );
+            exit;
+        }
+
+        // Trim BOM
+        if ( isset( $header[0] ) ) {
+            $header[0] = preg_replace( '/^\xEF\xBB\xBF/', '', (string) $header[0] );
+        }
+
+        $map = array();
+        foreach ( $header as $idx => $name ) {
+            $name = sanitize_key( $name );
+            if ( $name !== '' && isset( $allowed[ $name ] ) ) {
+                $map[ $idx ] = $name;
+            }
+        }
+
+        $inserted = 0;
+        $updated  = 0;
+        $skipped  = 0;
+
+        while ( ( $row = fgetcsv( $fh ) ) !== false ) {
+            if ( ! is_array( $row ) ) { continue; }
+            $data = array();
+            foreach ( $map as $idx => $col ) {
+                $val = isset( $row[ $idx ] ) ? $row[ $idx ] : '';
+                $data[ $col ] = $val;
+            }
+
+            // Basic normalization for numeric fields
+            $numeric = array( 'id','post_id','expiry_ts','manual_mode','allow_duplicate_site','follow_up','temporary_enabled','expiry_ts_checked_at' );
+            foreach ( $numeric as $nf ) {
+                if ( isset( $data[ $nf ] ) && $data[ $nf ] !== '' && is_numeric( $data[ $nf ] ) ) {
+                    $data[ $nf ] = (string) intval( $data[ $nf ] );
+                }
+            }
+
+            $post_id = isset( $data['post_id'] ) ? intval( $data['post_id'] ) : 0;
+            $id      = isset( $data['id'] ) ? intval( $data['id'] ) : 0;
+
+            // Remove empty id to avoid accidental primary key collisions
+            if ( $id <= 0 ) { unset( $data['id'] ); }
+
+            if ( $post_id > 0 ) {
+                $res = $wpdb->replace( $table, $data );
+                if ( $res === false ) { $skipped++; } else { $updated++; }
+            } elseif ( $id > 0 ) {
+                $res = $wpdb->update( $table, $data, array( 'id' => $id ) );
+                if ( $res === false ) { $skipped++; } else { $updated++; }
+            } else {
+                $res = $wpdb->insert( $table, $data );
+                if ( $res === false ) { $skipped++; } else { $inserted++; }
+            }
+        }
+
+        fclose( $fh );
+
+        $msg = sprintf( 'ייבוא הסתיים. נוספו: %d | עודכנו: %d | דולגו/שגיאות: %d', $inserted, $updated, $skipped );
+        wp_safe_redirect( add_query_arg( 'expman_ssl_msg', rawurlencode( $msg ), $this->expman_redirect_back() ) );
+        exit;
+    }
+
+    public function handle_expman_ssl_trash() {
+        if ( ! current_user_can( 'read' ) ) {
+            wp_die( esc_html__( 'Unauthorized', 'expiry-manager' ), 403 );
+        }
+
+        $post_id = intval( $_GET['post_id'] ?? 0 );
+        $row_id  = intval( $_GET['row_id'] ?? 0 );
+        $nonce   = sanitize_text_field( $_GET['_wpnonce'] ?? '' );
+        if ( ! wp_verify_nonce( $nonce, 'expman_ssl_trash_' . ( $post_id ?: $row_id ) ) ) {
+            wp_die( 'Bad nonce' );
+        }
+
+        $ok = false;
+        if ( $post_id > 0 && function_exists( 'wp_trash_post' ) ) {
+            $res = wp_trash_post( $post_id );
+            $ok  = ( $res !== false );
+        }
+
+        if ( ! $ok ) {
+            global $wpdb;
+            $table = $wpdb->prefix . Expman_SSLCerts_Page::CERTS_TABLE;
+            if ( $row_id > 0 ) {
+                $ok = $wpdb->update( $table, array( 'status' => 'trash' ), array( 'id' => $row_id ), array( '%s' ), array( '%d' ) ) !== false;
+            } elseif ( $post_id > 0 ) {
+                $ok = $wpdb->update( $table, array( 'status' => 'trash' ), array( 'post_id' => $post_id ), array( '%s' ), array( '%d' ) ) !== false;
+            }
+        }
+
+        $redirect = $this->expman_redirect_back();
+        $redirect = remove_query_arg( array( 'expman_ssl_action', 'expman_ssl_ok' ), $redirect );
+        $redirect = add_query_arg( array( 'expman_ssl_action' => 'trash', 'expman_ssl_ok' => $ok ? 1 : 0 ), $redirect );
+        wp_safe_redirect( $redirect );
+        exit;
+    }
+
+    public function handle_expman_ssl_restore() {
+        if ( ! current_user_can( 'read' ) ) {
+            wp_die( esc_html__( 'Unauthorized', 'expiry-manager' ), 403 );
+        }
+
+        $post_id = intval( $_GET['post_id'] ?? 0 );
+        $row_id  = intval( $_GET['row_id'] ?? 0 );
+        $nonce   = sanitize_text_field( $_GET['_wpnonce'] ?? '' );
+        if ( ! wp_verify_nonce( $nonce, 'expman_ssl_restore_' . ( $post_id ?: $row_id ) ) ) {
+            wp_die( 'Bad nonce' );
+        }
+
+        $ok = false;
+        if ( $post_id > 0 && function_exists( 'wp_untrash_post' ) ) {
+            $res = wp_untrash_post( $post_id );
+            $ok  = ( $res !== false );
+        }
+
+        if ( ! $ok ) {
+            global $wpdb;
+            $table = $wpdb->prefix . Expman_SSLCerts_Page::CERTS_TABLE;
+            if ( $row_id > 0 ) {
+                $ok = $wpdb->update( $table, array( 'status' => 'publish' ), array( 'id' => $row_id ), array( '%s' ), array( '%d' ) ) !== false;
+            } elseif ( $post_id > 0 ) {
+                $ok = $wpdb->update( $table, array( 'status' => 'publish' ), array( 'post_id' => $post_id ), array( '%s' ), array( '%d' ) ) !== false;
+            }
+        }
+
+        $redirect = $this->expman_redirect_back();
+        $redirect = remove_query_arg( array( 'expman_ssl_action', 'expman_ssl_ok' ), $redirect );
+        $redirect = add_query_arg( array( 'expman_ssl_action' => 'restore', 'expman_ssl_ok' => $ok ? 1 : 0 ), $redirect );
+        wp_safe_redirect( $redirect );
+        exit;
+    }
+
+    public function handle_expman_ssl_delete_permanent() {
+        if ( ! current_user_can( 'read' ) ) {
+            wp_die( esc_html__( 'Unauthorized', 'expiry-manager' ), 403 );
+        }
+
+        $post_id = intval( $_GET['post_id'] ?? 0 );
+        $row_id  = intval( $_GET['row_id'] ?? 0 );
+        $nonce   = sanitize_text_field( $_GET['_wpnonce'] ?? '' );
+        if ( ! wp_verify_nonce( $nonce, 'expman_ssl_delete_permanent_' . ( $post_id ?: $row_id ) ) ) {
+            wp_die( 'Bad nonce' );
+        }
+
+        $ok = false;
+        if ( $post_id > 0 && function_exists( 'wp_delete_post' ) ) {
+            $res = wp_delete_post( $post_id, true );
+            $ok  = ( $res !== false );
+        }
+
+        if ( ! $ok ) {
+            global $wpdb;
+            $table = $wpdb->prefix . Expman_SSLCerts_Page::CERTS_TABLE;
+            if ( $row_id > 0 ) {
+                $ok = $wpdb->delete( $table, array( 'id' => $row_id ), array( '%d' ) ) !== false;
+            } elseif ( $post_id > 0 ) {
+                $ok = $wpdb->delete( $table, array( 'post_id' => $post_id ), array( '%d' ) ) !== false;
+            }
+        }
+
+        $redirect = $this->expman_redirect_back();
+        $redirect = remove_query_arg( array( 'expman_ssl_action', 'expman_ssl_ok' ), $redirect );
+        $redirect = add_query_arg( array( 'expman_ssl_action' => 'delete', 'expman_ssl_ok' => $ok ? 1 : 0 ), $redirect );
+        wp_safe_redirect( $redirect );
+        exit;
+    }
+
+
 
 /* ---------- SHORTCODES (Public Pages) ---------- */
 
@@ -368,6 +724,11 @@ add_submenu_page('expman_dashboard', 'שרתים', 'שרתים', 'read', 'expman
         $guard = $this->shortcode_guard();
         if ( $guard !== '' ) { return $guard; }
 
+        if ( class_exists( 'Expman_SSLCerts_Page' ) ) {
+            return Expman_SSLCerts_Page::render();
+        }
+
+        // Fallback: previous generic certs view
         return $this->shortcode_generic( array( 'type' => 'certs', 'title' => 'תעודות אבטחה' ) );
     }
 

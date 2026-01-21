@@ -464,6 +464,13 @@ private function sanitize_datetime( $value ) {
             $express_service_code = trim( (string) $this->get_value( $data, $header_map, array( 'express service code', 'express_service_code' ), '' ) );
             $ship_date = $this->sanitize_date( $this->get_value( $data, $header_map, array( 'ship date', 'ship_date', 'תאריך משלוח' ), '' ) );
             $ending_on = $this->sanitize_date( $this->get_value( $data, $header_map, array( 'ending on', 'ending_on', 'ending', 'end date', 'תאריך סיום' ), '' ) );
+
+            $last_renewal_date = $this->sanitize_date( $this->get_value( $data, $header_map, array( 'תאריך חידוש אחרון', 'last renewal date', 'last_renewal_date', 'last renewal' ), '' ) );
+            $nickname = trim( (string) $this->get_value( $data, $header_map, array( 'כינוי', 'nickname' ), '' ) );
+            $archived_at = $this->sanitize_datetime( $this->get_value( $data, $header_map, array( 'archived at', 'archived_at' ), '' ) );
+            $archived_by = intval( $this->get_value( $data, $header_map, array( 'archived by', 'archived_by' ), '' ) );
+            if ( $archived_at && $archived_by <= 0 ) { $archived_by = get_current_user_id(); }
+
             $operating_system = trim( (string) $this->get_value( $data, $header_map, array( 'מערכת הפעלה', 'operating system', 'operating_system' ), '' ) );
             $service_level = trim( (string) $this->get_value( $data, $header_map, array( 'סוג שירות', 'service level', 'service_level' ), '' ) );
             $server_model = trim( (string) $this->get_value( $data, $header_map, array( 'דגם שרת', 'server model', 'server_model' ), '' ) );
@@ -486,14 +493,18 @@ private function sanitize_datetime( $value ) {
                 'express_service_code'     => $express_service_code !== '' ? $express_service_code : null,
                 'ship_date'                => $ship_date,
                 'ending_on'                => $ending_on,
+                'last_renewal_date'        => $last_renewal_date,
                 'operating_system'         => $operating_system !== '' ? $operating_system : null,
                 'service_level'            => $service_level !== '' ? $service_level : null,
                 'server_model'             => $server_model !== '' ? $server_model : null,
+                'nickname'                 => $nickname !== '' ? $nickname : null,
                 'temp_notice_enabled'      => $temp_notice_enabled,
                 'temp_notice_text'         => $temp_notice_text !== '' ? $temp_notice_text : null,
                 'notes'                    => $notes !== '' ? $notes : null,
                 'raw_json'                 => $raw_json !== '' ? $raw_json : null,
                 'last_sync_at'             => $last_sync_at,
+                'archived_at'              => $archived_at,
+                'archived_by'              => $archived_by > 0 ? $archived_by : null,
                 'deleted_at'               => $deleted_at,
                 'deleted_by'               => $deleted_by > 0 ? $deleted_by : null,
                 'created_at'               => $created_at ?: current_time( 'mysql' ),

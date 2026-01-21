@@ -1389,6 +1389,7 @@ JS;
             });
         })();
         </script>';
+        echo '</form>'; // close OS list form before opening export form
 
         echo '<hr style="margin:24px 0;">';
         echo '<h3>ייבוא / ייצוא לאקסל (CSV)</h3>';
@@ -1412,6 +1413,11 @@ JS;
         wp_nonce_field( 'expman_import_servers_direct', 'expman_import_servers_direct_nonce' );
         echo '<input type="hidden" name="expman_action" value="import_csv_direct">';
         echo '<input type="hidden" name="tab" value="settings">';
+        echo '<label style="display:block;margin:8px 0 6px;">
+                <input type="checkbox" name="expman_servers_direct_purge" value="1">
+                למחוק את כל הנתונים בטבלה הראשית לפני הייבוא
+              </label>';
+        echo '<div style="margin:-2px 0 8px;color:#a00;font-size:12px;">פעולה זו בלתי הפיכה ומוחקת את כל רשומות השרתים (למודול זה) לפני טעינת הקובץ החדש.</div>';
         echo '<input type="file" name="servers_direct_file" accept=".csv,.xlsx">';
         echo '<button type="submit" class="button">ייבוא ישיר לטבלה הראשית</button>';
         echo '</form>';

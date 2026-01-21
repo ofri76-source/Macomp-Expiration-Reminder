@@ -633,6 +633,27 @@ class Expman_Servers_Actions {
     }
 
     public function action_import_csv_direct() {
+        $purge = ! empty( $_POST['expman_servers_direct_purge'] );
+
+        // If no file was uploaded, do not purge.
+        if ( $purge && empty( $_FILES['servers_direct_file']['tmp_name'] ) ) {
+            $purge = false;
+        }
+
+        if ( $purge ) {
+            global $wpdb;
+            $servers_table = $wpdb->prefix . Expman_Servers_Page::TABLE_SERVERS;
+
+            $deleted = $wpdb->query( $wpdb->prepare( "DELETE FROM {$servers_table} WHERE option_key=%s", $this->option_key ) );
+            if ( $deleted === false ) {
+                $this->logger->log_server_event( null, 'purge_before_import', 'ניקוי טבלה לפני ייבוא נכשל', array( 'error' => $wpdb->last_error ), 'error' );
+                $this->add_notice( 'ניקוי טבלה לפני הייבוא נכשל: ' . $wpdb->last_error, 'error' );
+            } else {
+                $this->logger->log_server_event( null, 'purge_before_import', 'בוצע ניקוי טבלה לפני ייבוא', array( 'deleted' => intval( $deleted ) ), 'info' );
+                $this->add_notice( 'נמחקו ' . intval( $deleted ) . ' רשומות מהטבלה הראשית לפני הייבוא.', 'success' );
+            }
+        }
+
         return ( new Expman_Servers_Importer( $this->logger, $this->option_key ) )->run_direct( 'servers_direct_file' );
     }
 
